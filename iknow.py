@@ -243,7 +243,7 @@ class Iknow:
                 #TODO: ensure we don't end up with a querystring like sentences.xml?& (question mark and ampersand)
                 currentUrl += "&include_sentences=true"
             if self.callback:
-                self.callback("page %s" % page, len(allItems.keys()))           
+                self.callback(currentUrl, page, len(allItems.keys()))           
             xml = urllib2.urlopen(currentUrl)
             items = importer.getItemsFromFile(xml)
             if len(items) > 0 and len(set(items.keys()).difference(set(allItems.keys()))) > 0:
@@ -255,9 +255,9 @@ class Iknow:
         else:
             return allItems.values()
 
-    def listItems(self, listId, includeSentences=True, langCode=None, returnAsHash=False):
+    def listItems(self, listId, includeSentences, langCode, translationLanguageCode, returnAsHash=False):
         itemsUrl = "http://api.iknow.co.jp/lists/%s/items.xml" % listId
-        scanner = IknowItemScanner(langCode, self.nativeLangCode, False)
+        scanner = IknowItemScanner(langCode, translationLanguageCode, False)
         items = self._allItemsUntilEmpty(scanner, itemsUrl, False, True)
         if not includeSentences:
             return items.values()
@@ -286,7 +286,7 @@ class Iknow:
         for iknowlist in allLists:
             if langCode and iknowlist['language'] != langCode:
                 continue
-            items = self.listItems(iknowlist['iknow_id'], includeSentences, iknowlist['language'], True)
+            items = self.listItems(iknowlist['iknow_id'], includeSentences, iknowlist['language'], iknowlist['translation_language'], True)
             allItems.update(items)
         return allItems.values()
     
@@ -369,7 +369,7 @@ class IknowCache(Iknow):
     
     def listItems(self, listId, includeSentences=True, returnAsHash=False):
         iknowlist = self.list(listId)
-        return Iknow.listItems(self, listId, includeSentences, iknowlist["language"], returnAsHash)
+        return Iknow.listItems(self, listId, includeSentences, iknowlist["language"], iknowlist['translation_language'], returnAsHash)
     
     def userLists(self):
         timeNow = time.time()

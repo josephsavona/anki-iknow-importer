@@ -11,6 +11,7 @@ import re, urllib
 
 VOCAB_MODEL_NAME = u"iKnow! Vocabulary"
 SENTENCE_MODEL_NAME = u"iKnow! Sentences"
+IMPORT_AUDIO = True
 
 #def doModelsExist():
 #    vocab = False
@@ -111,7 +112,7 @@ def importIknowItem(item, sentenceModel, vocabModel, readingType=None):
         fact['Image_URI'] = u'<img src="%s" alt="[No Image]" />' % item["image_uri"]
     else:
         fact['Image_URI'] = u""
-    if "audio_uri" in item:
+    if IMPORT_AUDIO and "audio_uri" in item:
         (filePath, headers) = urllib.urlretrieve(item["audio_uri"])
         path = mw.deck.addMedia(filePath)
         fact['Audio'] = u"[sound:%s]" % path
@@ -147,7 +148,15 @@ def getUsername():
                 continue
             mw.config["iknow.username"] = username
             return username
-        
+
+def clearUserPreferences():
+    if "iknow.username" in mw.config:
+        del mw.config["iknow.username"]
+    if "iknow.nativeLangCode" in mw.config:
+        del mw.config["iknow.nativeLangCode"]
+    if "iknow.confirmBeforeEachImport" in mw.config:
+        del mw.config["iknow.confirmBeforeEachImport"]
+   
 def resetUserPrefs():
     mw.config["iknow.username"] = u""
     mw.config["iknow.nativeLangCode"] = u""
@@ -171,7 +180,7 @@ def getNativeLangCode():
     else:
         haveCode = False
         while not haveCode:
-            nativeLangCode = getOnlyText("Enter the code for your native language 'en' English, 'ja' Japanese, 'zh-CN' Chinese").strip()
+            nativeLangCode = getOnlyText("Enter the code for your **native** language. For an English speaker learning Japanese, you'd enter 'en'.\n\nCommon languages are: 'en' English,\n'ja' Japanese,\n'zh-CN' Chinese").strip()
             if len(nativeLangCode) == 0:
                 continue
             mw.config["iknow.nativeLangCode"] = nativeLangCode
@@ -190,17 +199,34 @@ def getListId():
         return listId.group(1)
 
 class ProgressTracker:
-    def __init__(self):
+    def __init__(self, log=None):
         self.dialog = QProgressDialog(_("Importing..."), "", 0, 0, mw)
         self.dialog.setCancelButton(None)
         self.dialog.setMaximum(100)
         self.dialog.setMinimumDuration(0)
         self.dialog.setLabelText("Starting import..")
         self.currentPercent = 0
+        if log:
+            self.logFile = open(log, 'a')
+            self.logFile.write("START [")
+        else:
+            self.logFile = None
     
-    def downloadCallback(self, downloadingDescription, count):
+    def close(self):
+        if self.logFile:
+            self.logFile.write("] END")
+            self.logFile.flush()
+            self.logFile.close()
+    
+    def logMsg(self, msg):
+        if self.logFile:
+            self.logFile.write(str(msg))
+            self.logFile.flush()
+    
+    def downloadCallback(self, url, pageNumber, itemCount):
         self.currentPercent += 1
-        self.dialog.setLabelText("Downloading %s, got %s items so far." % (downloadingDescription, count))
+        self.logMsg("url:%s\npage#:%s\nitems:%s\n\n" % (url, pageNumber, itemCount))
+        self.dialog.setLabelText("Downloading page %s, got %s items so far." % (pageNumber, itemCount))
         self.dialog.setValue(self.currentPercent)
         mw.app.processEvents()
     
@@ -210,6 +236,7 @@ class ProgressTracker:
         self.dialog.setMinimumDuration(0)
         self.dialog.setValue(0)
         self.dialog.setLabelText("Starting to import %s items" % count)
+        self.logMsg("starting to import %s items\n\n" % count)
         mw.app.processEvents()
     
     def importCallback(self, processedCount, currentItem):
@@ -219,7 +246,7 @@ class ProgressTracker:
 
 def preFetch():
     models = getModels()
-    progress = ProgressTracker()
+    progress = ProgressTracker("/tmp/iknowAnkiPluginLog.txt")
     iknow = IknowCache(getUsername(), getNativeLangCode(), ":memory:")
     iknow.setCallback(progress.downloadCallback)
     return (progress, iknow, models)
@@ -242,6 +269,7 @@ def postFetch(progress, items, models, sentencesOnly):
         else:
             totalDup += 1
     progress.dialog.cancel()
+    progress.close()
     mw.deck.save()
     mw.reset()
     QMessageBox.information(mw,"Summary","Import complete. Imported %s items and skipped %s duplicates." % (totalImported, totalDup))
@@ -318,7 +346,11 @@ resetPrefs = QAction(mw)
 resetPrefs.setText("iKnow - Reset Username and Language")
 mw.connect(resetPrefs, SIGNAL("triggered()"),
     resetUserPrefs)
-
+    
+clearPrefs = QAction(mw)
+clearPrefs.setText("iKnow - Clear Preferences")
+mw.connect(clearPrefs, SIGNAL("triggered()"),
+    clearUserPreferences)
 
 mw.mainWin.menuTools.addSeparator()
 mw.mainWin.menuTools.addAction(userAll)
@@ -327,6 +359,7 @@ mw.mainWin.menuTools.addAction(listAll)
 mw.mainWin.menuTools.addAction(listSent)
 mw.mainWin.menuTools.addSeparator()
 mw.mainWin.menuTools.addAction(resetPrefs)
+mw.mainWin.menuTools.addAction(clearPrefs)
 
 #if not doModelsExist():
 setMods = QAction(mw)
