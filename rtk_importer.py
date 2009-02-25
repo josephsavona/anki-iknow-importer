@@ -11,6 +11,88 @@ try:
 except:
     from pysqlite2 import dbapi2 as sqlite
 
+class EmbeddedReviewer:
+    def __init__(self, mainWindow, parentDialog, container):
+        self.reviewItems = {}
+        self.currentReviewItem = None
+        
+        box = QtGui.QGroupBox("Quick Review", parentDialog)
+        layout = QtGui.QVBoxLayout(box)
+        container.addWidget(box)
+        
+        self.lblReviewQuestion = QtGui.QLabel("")
+        layout.addWidget(self.lblReviewQuestion)
+        
+        self.btnFlipCardButton = QtGui.QPushButton(parentDialog)
+        self.btnFlipCardButton.setText(_("Flip Card"))
+        layout.addWidget(self.btnFlipCardButton)
+        parentDialog.connect(self.btnFlipCardButton, QtCore.SIGNAL("clicked()"), self.callbackFlipCardClicked)
+        
+        self.btnYesButton = QtGui.QPushButton(parentDialog)
+        self.btnYesButton.setText(_("Remembered"))
+        layout.addWidget(self.btnYesButton)
+        parentDialog.connect(self.btnYesButton, QtCore.SIGNAL("clicked()"), self.callbackYesButtonClicked)
+        
+        self.btnNoButton = QtGui.QPushButton(parentDialog)
+        self.btnNoButton.setText(_("Forgot"))
+        layout.addWidget(self.btnNoButton)
+        parentDialog.connect(self.btnNoButton, QtCore.SIGNAL("clicked()"), self.callbackNoButtonClicked)
+        self.refresh()
+    
+    def callbackFlipCardClicked(self):
+        if self.currentReviewItem:
+            (answer, showTime, interval) = self.reviewItems[self.currentReviewItem]
+            self.lblReviewQuestion.setText(answer)
+            self.setState(2)
+        else:
+            self.refresh() #don't refresh if there is a current item for review
+    
+    def callbackYesButtonClicked(self):
+        if self.currentReviewItem:
+            (answer, showTime, interval) = self.reviewItems[self.currentReviewItem]
+            self.reviewItems[self.currentReviewItem] = (answer, time.time() + interval * 2, interval * 2)
+        self.refresh()
+    
+    def callbackNoButtonClicked(self):
+        if self.currentReviewItem:
+            (answer, showTime, interval) = self.reviewItems[self.currentReviewItem]
+            self.reviewItems[self.currentReviewItem] = (answer, time.time() + 60, 60)
+        self.refresh()
+    
+    def setState(self, state):
+        if state == 0:
+            self.btnNoButton.setEnabled(False)
+            self.btnYesButton.setEnabled(False)
+            self.btnFlipCardButton.setEnabled(False)
+        elif state == 1:
+            self.btnFlipCardButton.setEnabled(True)
+            self.btnYesButton.setEnabled(False)
+            self.btnNoButton.setEnabled(False)
+        elif state == 2:
+            self.btnFlipCardButton.setEnabled(False)
+            self.btnYesButton.setEnabled(True)
+            self.btnNoButton.setEnabled(True)
+    
+    def refresh(self):
+        nextKey, earliestTime = None, time.time()
+        for key in self.reviewItems.keys():
+            (answer, showTime, interval) = self.reviewItems[key]
+            if showTime < earliestTime:
+                nextKey = key
+                earliestTime = showTime
+        if nextKey:
+            self.lblReviewQuestion.setText(nextKey)
+            self.currentReviewItem = nextKey
+            self.setState(1)
+        else:
+            self.lblReviewQuestion.setText("")
+            self.currentReviewItem = None
+            self.setState(0)
+    
+    def addQuestionAnswerForReview(self, question, answer):
+        self.reviewItems[question] = (answer, time.time() + 60, 60)
+        self.refresh()
+
 class RTKImportDialog(QtGui.QDialog):
     MAX_HEISIG = 3007
     KANJI_MODEL = u"RTK - Kanji"
@@ -22,9 +104,6 @@ class RTKImportDialog(QtGui.QDialog):
         self.conn.row_factory = sqlite.Row
         self.cursor = self.conn.cursor()
         
-        self.review_kanji = {}
-        self.current_review_kanji = None
-        
         self.currentKanjiFrame = None
         self.determineNextKanji()
         
@@ -35,31 +114,15 @@ class RTKImportDialog(QtGui.QDialog):
         #main layout
         self.vboxlayout = QtGui.QVBoxLayout(self)
         self.vboxlayout.setObjectName("vboxlayout")
-        #review sublayout
-        self.reviewBox = QtGui.QGroupBox("Quick Review", self)
-        self.reviewLayout = QtGui.QHBoxLayout(self.reviewBox)
-        self.vboxlayout.addWidget(self.reviewBox)
-        #   review keyword
-        self.rvwKeyword = QtGui.QLabel("")
-        self.reviewLayout.addWidget(self.rvwKeyword)
-        #   review show button
-        self.rvwShowButton = QtGui.QPushButton(self)
-        self.rvwShowButton.setText(_("Show"))
-        self.reviewLayout.addWidget(self.rvwShowButton)
-        self.rvwYesButton = QtGui.QPushButton(self)
-        self.rvwYesButton.setText(_("Remembered"))
-        self.reviewLayout.addWidget(self.rvwYesButton)
-        self.rvwNoButton = QtGui.QPushButton(self)
-        self.rvwNoButton.setText(_("Forgot"))
-        self.reviewLayout.addWidget(self.rvwNoButton)
+        
+        #embedded reviewer for added kanji
+        self.reviewerWidget = EmbeddedReviewer(mw, self, self.vboxlayout)
         
         #settings sublayout
         self.settingsBox = QtGui.QGroupBox("Card Details", self)
         self.settingsLayout = QtGui.QVBoxLayout(self.settingsBox)
         self.vboxlayout.addWidget(self.settingsBox)
-        #   status label
-        self.statusLabel = QtGui.QLabel("")
-        self.settingsLayout.addWidget(self.statusLabel)
+
         #   kanji label
         self.kanjiLabel = QtGui.QLabel("<b>" + _("Kanji") + "</b>" + (": %s" % self.currentKanji))
         self.settingsLayout.addWidget(self.kanjiLabel)
@@ -82,9 +145,9 @@ class RTKImportDialog(QtGui.QDialog):
         self.fld_primitives.setMinimumSize(100,100)
         self.settingsLayout.addWidget(self.fld_primitives)
         
-        #   review area
-        self.reviewLabel = QtGui.QLabel("")
-        self.settingsLayout.addWidget(self.reviewLabel)
+        #   status label
+        self.statusLabel = QtGui.QLabel("")
+        self.vboxlayout.addWidget(self.statusLabel)
         
         self.addButton = QtGui.QPushButton(self)
         self.addButton.setText(_("Add Kanji"))
@@ -97,9 +160,6 @@ class RTKImportDialog(QtGui.QDialog):
         
         self.connect(self.addButton, QtCore.SIGNAL("clicked()"), self.addClicked)
         self.connect(self.cancelButton, QtCore.SIGNAL("clicked()"), self.cancelClicked)
-        self.connect(self.rvwShowButton, QtCore.SIGNAL("clicked()"), self.reviewShowClicked)
-        self.connect(self.rvwYesButton, QtCore.SIGNAL("clicked()"), self.reviewYesClicked)
-        self.connect(self.rvwNoButton, QtCore.SIGNAL("clicked()"), self.reviewNoClicked)
         self.fld_keyword.setFocus()
         self.exec_()
         
@@ -172,52 +232,10 @@ class RTKImportDialog(QtGui.QDialog):
             mw.deck.save()
             mw.reset()
             self.statusLabel.setText("Added card for kanji: %s" % self.currentKanji)
-            self.review_kanji[self.currentKanji] = [time.time() + 60, unicode(self.fld_keyword.text()), 60]
-            self.updateReview()
+            self.reviewerWidget.addQuestionAnswerForReview(unicode(self.fld_keyword.text()), self.currentKanji)
             self.incrementKanji()
-        #except FactInvalidError:
-        #    QMessageBox.warning(mw, "Warning", "One or more fields was not unique. Please check your keyword and story and ensure that they are unique for this Kanji.")
         except:
             QMessageBox.warning(mw, "Warning","Your card may contain duplicate data. Please check that you have the correct keyword and that you haven't re-used the keyword or story before by accident. If you are sure there is no duplicate, then please contact the developer.")
-    
-    def updateReview(self):
-        nextKanji, earliestTime = None, time.time()
-        for kanji in self.review_kanji.keys():
-            reviewTime = self.review_kanji[kanji][0]
-            if reviewTime < earliestTime:
-                nextKanji = kanji
-                earliestTime = reviewTime
-        if nextKanji:
-            self.current_review_kanji = nextKanji
-            self.rvwKeyword.setText(self.review_kanji[nextKanji][1])
-        else:
-            self.current_review_kanji = None
-            self.rvwKeyword.setText("")
-    
-    def reviewShowClicked(self):
-        if self.current_review_kanji:
-            keyword = self.review_kanji[self.current_review_kanji][1]
-            self.rvwKeyword.setText("%s: %s" % (keyword, self.current_review_kanji))
-        else:
-            QMessageBox.information(mw, "Information", "No current kanji. There are %s kanji in review" % (len(self.review_kanji)))
-    
-    def reviewYesClicked(self):
-        if self.current_review_kanji:
-            kanji = self.current_review_kanji
-            self.review_kanji[kanji][0] = time.time() + self.review_kanji[kanji][2] * 2
-            self.review_kanji[kanji][2] = self.review_kanji[kanji][2] * 2
-            self.updateReview()
-        else:
-            QMessageBox.information(mw, "Information", "No current kanji. There are %s kanji in review" % (len(self.review_kanji)))
-    
-    def reviewNoClicked(self):
-        if self.current_review_kanji:
-            kanji = self.current_review_kanji
-            self.review_kanji[kanji][0] = time.time() + 60
-            self.review_kanji[kanji][2] = 60
-            self.updateReview()
-        else:
-            QMessageBox.information(mw, "Information", "No current kanji. There are %s kanji in review" % (len(self.review_kanji)))
     
     def incrementKanji(self):
         self.determineNextKanji()
