@@ -257,6 +257,14 @@ def postFetch(progress, items, models, sentencesOnly):
     totalImported = 0
     totalDup = 0
     confirmTypes = getCachedImportConfirm()
+    maxImportsStr = getOnlyText("Enter the maximum number of items to import (will import this many sentences and this many vocabulary):").strip()
+    totalImportedByType = None
+    maxImports = None
+    try:
+        maxImports = int(maxImportsStr)
+        totalImportedByType = {'item' : 0, 'sentence' : 0}
+    except:
+        pass
     for i, item in enumerate(items):
         progress.importCallback(i, item["expression"])
         if sentencesOnly and item["type"] != "sentence":
@@ -264,8 +272,18 @@ def postFetch(progress, items, models, sentencesOnly):
         if confirmTypes and confirmTypes.find(item["type"]) >= 0:
             if not confirmImportOfItem(item):
                 continue
+        if totalImportedByType and totalImportedByType[item["type"]] >= maxImports:
+            continue
         if importIknowItem(item, sentenceModel, vocabModel):
             totalImported += 1
+            if totalImportedByType:
+                totalImportedByType[item["type"]] += 1
+                done = True
+                for key in totalImportedByType.keys():
+                    if totalImportedByType[key] < maxImports:
+                        done = False
+                if done:
+                    break
         else:
             totalDup += 1
     progress.dialog.cancel()

@@ -4,7 +4,7 @@ from xml.sax import ContentHandler
 from xml.sax import make_parser
 from xml.sax.handler import feature_namespaces
 #for the iknow api wrapper
-import urllib2, re
+import urllib2, re, simplejson
 #for caching of iknow list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
 import time
 try:
@@ -255,17 +255,19 @@ class Iknow:
         else:
             return allItems.values()
 
-    def listItems(self, listId, includeSentences, langCode, translationLanguageCode, returnAsHash=False):
-        itemsUrl = "http://api.iknow.co.jp/lists/%s/items.xml" % listId
+    def listItems(self, listId, includeSentences, langCode, translationLanguageCode, returnAsHash=False, includeItems=True):
         scanner = IknowItemScanner(langCode, translationLanguageCode, False)
-        items = self._allItemsUntilEmpty(scanner, itemsUrl, False, True)
-        if not includeSentences:
-            return items.values()
-        sentencesUrl = "http://api.iknow.co.jp/lists/%s/sentences.xml" % listId
-        scanner.includeSentences = True
-        sentences = self._allItemsUntilEmpty(scanner, sentencesUrl, True, True)
-        items.update(sentences)
-        return items.values()
+        allItems = {}
+        if includeItems:
+            itemsUrl = "http://api.iknow.co.jp/lists/%s/items.xml" % listId
+            items = self._allItemsUntilEmpty(scanner, itemsUrl, False, True)
+            allItems.update(items)
+        if includeSentences:
+            sentencesUrl = "http://api.iknow.co.jp/lists/%s/sentences.xml" % listId
+            scanner.includeSentences = True
+            sentences = self._allItemsUntilEmpty(scanner, sentencesUrl, True, True)
+            allItems.update(sentences)
+        return allItems.values()
         
     def userItems(self, includeSentences=True, langCode=None):
         url = "http://api.iknow.co.jp/users/%s/items.xml" % self.username
@@ -336,8 +338,26 @@ class IknowCache(Iknow):
             self.cursor.executescript("""
             create table dbversion(rowid integer primary key, version);
             create table iknow_list(rowid integer primary key, iknow_id integer not null unique, name, list_uri, language, translation_language);
-            insert into dbversion (version) values (1);""")
+            create table iknow_items(rowid integer primary key, iknow_id integer not null unique, json_data not null);
+            create table iknow_list_item(iknow_list_id integer not null, iknow_item_id integer not null);
+            insert into dbversion (version) values (2);""")
             
+    def _storeItemInList(self, itemHash, listId):
+        self.cursor.execute("select iknow_id from iknow_items where iknow_id = ?", (int(itemHash['iknow_id']),))
+        r = self.cursor.fetchone()
+        if r and len(r) > 0:
+            pass
+        else:
+            self.cursor.execute("insert into iknow_items(iknow_id, json_data) values (?,?)", (itemHash['iknow_id'], simplejson.dumps(itemHash)))
+        
+        self.cursor.execute("select * from iknow_list_item where iknow_list_id = ? and iknow_item_id = ?", (listId, itemHash['iknow_id']))
+        r = self.cursor.fetchone()
+        if r and len(r) > 0:
+            pass
+        else:
+            self.cursor.execute("insert into iknow_list_item(iknow_list_id, iknow_item_id) values(?,?)", (listId, itemHash['iknow_id']))
+        self.connection.commit()
+    
     def _storeList(self, listHash):
         self.cursor.execute("select iknow_id from iknow_list where iknow_id = ?", (int(listHash["iknow_id"]),))
         r = self.cursor.fetchone()
