@@ -12,6 +12,9 @@ except:
     from pysqlite2 import dbapi2 as sqlite
 
 class EmbeddedReviewer:
+    
+    BASE_INTERVAL = 2.2
+    FAIL_INTERVAL = 1
     def __init__(self, mainWindow, parentDialog, container):
         self.reviewItems = {}
         self.currentReviewItem = None
@@ -50,13 +53,15 @@ class EmbeddedReviewer:
     def callbackYesButtonClicked(self):
         if self.currentReviewItem:
             (answer, showTime, interval) = self.reviewItems[self.currentReviewItem]
-            self.reviewItems[self.currentReviewItem] = (answer, time.time() + interval * 2, interval * 2)
+            diff = (time.time() - showTime)
+            interval = interval * EmbeddedReviewer.BASE_INTERVAL
+            self.reviewItems[self.currentReviewItem] = (answer, time.time() + diff + 60 * interval , interval)
         self.refresh()
     
     def callbackNoButtonClicked(self):
         if self.currentReviewItem:
             (answer, showTime, interval) = self.reviewItems[self.currentReviewItem]
-            self.reviewItems[self.currentReviewItem] = (answer, time.time() + 60, 60)
+            self.reviewItems[self.currentReviewItem] = (answer, time.time() + EmbeddedReviewer.FAIL_INTERVAL * 60, EmbeddedReviewer.FAIL_INTERVAL)
         self.refresh()
     
     def setState(self, state):
@@ -90,7 +95,7 @@ class EmbeddedReviewer:
             self.setState(0)
     
     def addQuestionAnswerForReview(self, question, answer):
-        self.reviewItems[question] = (answer, time.time() + 60, 60)
+        self.reviewItems[question] = (answer, time.time() + EmbeddedReviewer.BASE_INTERVAL * 60, EmbeddedReviewer.BASE_INTERVAL)
         self.refresh()
 
 class RTKImportDialog(QtGui.QDialog):
