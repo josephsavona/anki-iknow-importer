@@ -1,18 +1,46 @@
 # -*- coding: utf-8 -*-
-#added to support iKnow's XML response type, which is much more accurate and consistent than the API's JSON response type (for example, the XML almost always has a phonetic reading whereas the JSON usually lacks it)
+#added to support SmartFM's XML response type, which is much more accurate and consistent than the API's JSON response type (for example, the XML almost always has a phonetic reading whereas the JSON usually lacks it)
 from xml.sax import ContentHandler
 from xml.sax import make_parser
 from xml.sax.handler import feature_namespaces
-#for the iknow api wrapper
-import urllib2, re, simplejson
-#for caching of iknow list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
-import time
+#for the smartfm api wrapper
+import urllib, urllib2, re, simplejson, os
+#for caching of smartfm list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
+import time, pprint
 try:
     from sqlite3 import dbapi2 as sqlite
 except:
     from pysqlite2 import dbapi2 as sqlite
 
-class IknowListScanner(ContentHandler):
+#CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
+CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
+
+#API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
+if CACHE_API_RESULTS_PATH:
+    if not os.path.exists(CACHE_API_RESULTS_PATH):
+        try:
+            os.mkdir(CACHE_API_RESULTS_PATH)
+        except:
+            CACHE_API_RESULTS_PATH = None
+if CACHE_API_RESULTS_PATH:    
+    import sha
+    def getUrlOrCache(url):
+        if url[-1] == "?":
+            url = url[0:-1]
+        hasher = sha.new(url)
+        hashedFilename = os.path.join(CACHE_API_RESULTS_PATH, hasher.hexdigest())
+        if not os.path.exists(hashedFilename):
+            urllib.urlretrieve(url, hashedFilename)
+        else:
+            print "DEBUG: using cached file %s" % (hashedFilename)
+        return open(hashedFilename)
+else:
+    def getUrlOrCache(url):
+        if url[-1] == "?":
+            url = url[0:-1]
+        return urllib2.urlopen(url)
+
+class SmartFMListScanner(ContentHandler):
     def __init__(self):
         self.lists = {}
         self.current_item = None
@@ -31,7 +59,7 @@ class IknowListScanner(ContentHandler):
             self.collect_chars= True
         else:
             self.collect_chars = False
-    
+
     def endElement(self, name):
         self.collect_chars = False
         self.current_key = None
@@ -61,8 +89,8 @@ class IknowListScanner(ContentHandler):
     def getItems(self):
         return self.lists
 
-#XML SAX handler. Can deal with pretty much any item/sentence/both combination from iKnow. Tested with user:items_studied (with sentences), items:items_in_list, and sentences:sentences_in_list. automatically adjusts the reading/expression (depending on user settings, it seems that what you think might be the expression is actually the reading and vice versa - this class checks for the presence of kanji in the reading and expression and ensure that the right value is in the right place)
-class IknowItemScanner(ContentHandler):
+#XML SAX handler. Can deal with pretty much any item/sentence/both combination from smartfm. Tested with user:items_studied (with sentences), items:items_in_list, and sentences:sentences_in_list. automatically adjusts the reading/expression (depending on user settings, it seems that what you think might be the expression is actually the reading and vice versa - this class checks for the presence of kanji in the reading and expression and ensure that the right value is in the right place)
+class SmartFMItemScanner(ContentHandler):
     def __init__(self, languageCode, translationLanguageCode, includeSentences):
         # Save the name we're looking for
         self.items = {}
@@ -154,6 +182,7 @@ class IknowItemScanner(ContentHandler):
     
     def _addItem(self, item):
         if item["type"] == "sentence" and not self.includeSentences:
+            print "skipping sentence because not including sentences"
             return
         if 'meaning' in item and item["language"].lower() == self.target_language:
             rdg = u""
@@ -162,6 +191,8 @@ class IknowItemScanner(ContentHandler):
             elif 'expression' in item:
                 item['reading'] = u""
             else:
+                print "skipping item with no reading:"
+                pprint.pprint(item)
                 return #no reading or expression, so skip this item
             if 'expression' not in item or (self._hasKanji(rdg) and not self._hasKanji(item["expression"])):
                 tmp = item['expression']
@@ -175,7 +206,9 @@ class IknowItemScanner(ContentHandler):
             item['iknow_id'] = item['type'] + ':' + item['iknow_id']
             self.items[item['iknow_id']] = item
             self.count += 1
-        
+        else:
+            print "skipping item:"
+            pprint.pprint(item)
 
     def _hasKanji(self, chars):
         for char in chars:
@@ -197,8 +230,8 @@ class IknowItemScanner(ContentHandler):
     def getItems(self):
         return self.items
 
-#wrapper class to make it easy to process a bunch of lists from iknow using the above parser
-class IknowImporter:
+#wrapper class to make it easy to process a bunch of lists from smartfm using the above parser
+class SmartFMImporter:
     def __init__(self, handler):
         self.parser = make_parser()
         self.parser.setFeature(feature_namespaces, 0)
@@ -213,7 +246,9 @@ class IknowImporter:
     def printAll(self):
         self.handler.printItems()
 
-class Iknow:
+class SmartFM:
+    SmartFM_STD_URL = "http://smart.fm"
+    SmartFM_API_URL = "http://api.smart.fm"
     def __init__(self, username, nativeLangCode):
         self.username = username
         self.nativeLangCode = nativeLangCode
@@ -222,29 +257,32 @@ class Iknow:
     def setCallback(self, callback):
         self.callback = callback
     
-    def _allItemsUntilEmpty(self, scanner, baseUrl, includeSentences, returnAsHash=False, hasManyPages=True):
+    def _allItemsUntilEmpty(self, scanner, baseUrl, baseParams, includeSentences, returnAsHash=False, hasManyPages=True):
         perPage = 25
         page = 0
         areMoreItems = True
-        importer = IknowImporter(scanner)
+        importer = SmartFMImporter(scanner)
         allItems = {}
-        if baseUrl.find("?") < 0:
-            baseUrl += "?"
-        if baseUrl.find("?") != len(baseUrl) - 1:
-            baseUrl += "&"
         while areMoreItems:
             page += 1
+            currentParams = {}
+            currentParams.update(baseParams)
             if hasManyPages:
-                currentUrl = "%sper_page=%s&page=%s" % (baseUrl, perPage, page)
+                currentParams['page'] = page
+                currentParams['per_page'] = perPage
             else:
-                currentUrl = baseUrl
                 areMoreItems = False
             if includeSentences:
-                #TODO: ensure we don't end up with a querystring like sentences.xml?& (question mark and ampersand)
-                currentUrl += "&include_sentences=true"
+                currentParams['include_sentences'] = "true"
+            currentUrl = baseUrl
+            if len(currentParams) > 0 and baseUrl.find("?") < 0:
+                currentUrl += "?"
+            for i, param in enumerate(currentParams.keys()):
+                if i != 0: currentUrl += "&"
+                currentUrl += "%s=%s" % (param, currentParams[param])
             if self.callback:
                 self.callback(currentUrl, page, len(allItems.keys()))           
-            xml = urllib2.urlopen(currentUrl)
+            xml = getUrlOrCache(currentUrl)
             items = importer.getItemsFromFile(xml)
             if len(items) > 0 and len(set(items.keys()).difference(set(allItems.keys()))) > 0:
                 allItems.update(items)
@@ -256,31 +294,31 @@ class Iknow:
             return allItems.values()
 
     def listItems(self, listId, includeSentences, langCode, translationLanguageCode, returnAsHash=False, includeItems=True):
-        scanner = IknowItemScanner(langCode, translationLanguageCode, False)
+        scanner = SmartFMItemScanner(langCode, translationLanguageCode, False)
         allItems = {}
         if includeItems:
-            itemsUrl = "http://api.iknow.co.jp/lists/%s/items.xml" % listId
-            items = self._allItemsUntilEmpty(scanner, itemsUrl, False, True)
+            itemsUrl = SmartFM.SmartFM_API_URL + "/lists/%s/items.xml" % listId
+            items = self._allItemsUntilEmpty(scanner, itemsUrl, {}, False, True)
             allItems.update(items)
         if includeSentences:
-            sentencesUrl = "http://api.iknow.co.jp/lists/%s/sentences.xml" % listId
+            sentencesUrl = SmartFM.SmartFM_API_URL + "/lists/%s/sentences.xml" % listId
             scanner.includeSentences = True
-            sentences = self._allItemsUntilEmpty(scanner, sentencesUrl, True, True)
+            sentences = self._allItemsUntilEmpty(scanner, sentencesUrl, {}, True, True)
             allItems.update(sentences)
         return allItems.values()
         
     def userItems(self, includeSentences=True, langCode=None):
-        url = "http://api.iknow.co.jp/users/%s/items.xml" % self.username
-        return self._allItemsUntilEmpty(IknowItemScanner(langCode, self.nativeLangCode, includeSentences), url, includeSentences)
+        url = SmartFM.SmartFM_API_URL + "/users/%s/items.xml" % self.username
+        return self._allItemsUntilEmpty(SmartFMItemScanner(langCode, self.nativeLangCode, includeSentences), url, {}, includeSentences)
     
     def list(self, listId):
-        url = "http://api.iknow.co.jp/lists/%s.xml" % listId
-        lists = self._allItemsUntilEmpty(IknowListScanner(), url, False, False, False)
+        url = SmartFM.SmartFM_API_URL + "/lists/%s.xml" % listId
+        lists = self._allItemsUntilEmpty(SmartFMListScanner(), url, {}, False, False, False)
         return lists[0]
     
     def userLists(self):
-        url = "http://api.iknow.co.jp/users/%s/lists.xml" % self.username
-        return self._allItemsUntilEmpty(IknowListScanner(), url, False)
+        url = SmartFM.SmartFM_API_URL + "/users/%s/lists.xml" % self.username
+        return self._allItemsUntilEmpty(SmartFMListScanner(), url, {}, False)
     
     def userListItems(self, includeSentences=True, langCode=None):
         allItems = {}
@@ -295,32 +333,32 @@ class Iknow:
     def matchingItems(self, word, includeSentences, searchLangCode, nativeLangCode=None):
         if not nativeLangCode:
             nativeLangCode = self.nativeLangCode
-        url = "http://api.iknow.co.jp/items/matching/%s.xml?language=%s&translation_language=%s" % (word, searchLangCode, nativeLangCode)
-        return self._allItemsUntilEmpty(IknowItemScanner(searchLangCode, self.nativeLangCode, includeSentences), url, includeSentences)
+        url = SmartFM.SmartFM_API_URL + "/items/matching/%s.xml" % (word)
+        return self._allItemsUntilEmpty(SmartFMItemScanner(searchLangCode, self.nativeLangCode, includeSentences), url, {"language" : searchLangCode, "translation_language" : nativeLangCode}, includeSentences)
     
     def matchingSentences(self, word, searchLangCode, nativeLangCode=None):
         if not nativeLangCode:
             nativeLangCode = self.nativeLangCode
-        url = "http://api.iknow.co.jp/sentences/matching/%s.xml?language=%s&translation_language=%s" % (word, searchLangCode, nativeLangCode)
-        return self._allItemsUntilEmpty(IknowItemScanner(searchLangCode, self.nativeLangCode, True), url, False)
+        url = SmartFM.SmartFM_API_URL + "/sentences/matching/%s.xml" % (word)
+        return self._allItemsUntilEmpty(SmartFMItemScanner(searchLangCode, self.nativeLangCode, True), url, {"language" : searchLangCode, "translation_language" : nativeLangCode}, False)
     
     def sentencesForItem(self, listId, itemId, itemExpression, itemLangCode):
-        url = "http://www.iknow.co.jp/sentences/matching?keyword=%s&item_id=%s&context=list&course_id=%s&row_id=row_%s&list_builder=lookup_sentences" % (itemExpression.encode('utf-8'), itemId, listId, itemId)
+        url = SmartFM.SmartFM_STD_URL + "/sentences/matching?keyword=%s&item_id=%s&context=list&course_id=%s&row_id=row_%s&list_builder=lookup_sentences" % (itemExpression.encode('utf-8'), itemId, listId, itemId)
         json = urllib2.urlopen(url)
-        sentenceUrls = re.findall("http://www.iknow.co.jp/sentences/\d+-", json.read())
+        sentenceUrls = re.findall(SmartFM.SmartFM_STD_URL + "/sentences/\d+-", json.read())
         allItems = {}
         for url in sentenceUrls:
             match = re.search("sentences/(\d+)-", url)
             if not match:
                 continue
             sentenceId = match.group(1)
-            items = self._allItemsUntilEmpty(IknowItemScanner(itemLangCode, self.nativeLangCode, True), "http://api.iknow.co.jp/sentences/%s.xml" % sentenceId, True, True, False)
+            items = self._allItemsUntilEmpty(SmartFMItemScanner(itemLangCode, self.nativeLangCode, True), SmartFM.SmartFM_API_URL + "/sentences/%s.xml" % sentenceId, {}, True, True, False)
             allItems.update(items)
         return allItems.values()
 
-class IknowCache(Iknow):
+class SmartFMCache(SmartFM):
     def __init__(self, username, nativeLangCode, dbPath):
-        Iknow.__init__(self, username, nativeLangCode)
+        SmartFM.__init__(self, username, nativeLangCode)
         self.connection = sqlite.connect(dbPath)
         self.connection.row_factory = sqlite.Row
         self.cursor = self.connection.cursor()
@@ -338,8 +376,6 @@ class IknowCache(Iknow):
             self.cursor.executescript("""
             create table dbversion(rowid integer primary key, version);
             create table iknow_list(rowid integer primary key, iknow_id integer not null unique, name, list_uri, language, translation_language);
-            create table iknow_items(rowid integer primary key, iknow_id integer not null unique, json_data not null);
-            create table iknow_list_item(iknow_list_id integer not null, iknow_item_id integer not null);
             insert into dbversion (version) values (2);""")
             
     def _storeItemInList(self, itemHash, listId):
@@ -383,19 +419,19 @@ class IknowCache(Iknow):
         iknowlist = self._getList(listId)
         if iknowlist:
             return iknowlist
-        iknowlist = Iknow.list(self, listId)
+        iknowlist = SmartFM.list(self, listId)
         self._storeList(listHash = iknowlist)
         return iknowlist
     
     def listItems(self, listId, includeSentences=True, returnAsHash=False):
         iknowlist = self.list(listId)
-        return Iknow.listItems(self, listId, includeSentences, iknowlist["language"], iknowlist['translation_language'], returnAsHash)
+        return SmartFM.listItems(self, listId, includeSentences, iknowlist["language"], iknowlist['translation_language'], returnAsHash)
     
     def userLists(self):
         timeNow = time.time()
         if self.userListsCached and timeNow - self.userListsCachedTime < 300: #cache five minutes, I imagine most people will probably run a couple imports in a row, possibly, and then not import for a while
             return self.userListsCached
-        userLists = Iknow.userLists(self)
+        userLists = SmartFM.userLists(self)
         self._storeLists(listHashList = userLists)
         self.userListsCached = userLists
         self.userListsCachedTime = time.time()
@@ -428,8 +464,8 @@ if __name__ == "__main__":
     
     #EXAMPLES: lines with one # are code, those with ## are comments
     
-    ## Create an Iknow API wrapper object with a default username and the user's native language code. Third parameter is either ':memory:' for an in memory cache, or "/Path/To/File.db" if you want to save the cache somewhere for reuse. List information is cached, to eliminate the need for repeated lookups of list information. List information is used so that you don't need to specify the language and translation language of a list manually when you grab list items/sentences.
-    #iknow = IknowCache("username", "en", ":memory:") #use a file path for the 3rd parameter if you want to save the cache somewhere.
+    ## Create an SmartFM API wrapper object with a default username and the user's native language code. Third parameter is either ':memory:' for an in memory cache, or "/Path/To/File.db" if you want to save the cache somewhere for reuse. List information is cached, to eliminate the need for repeated lookups of list information. List information is used so that you don't need to specify the language and translation language of a list manually when you grab list items/sentences.
+    iknow = SmartFMCache("username", "en", ":memory:") #use a file path for the 3rd parameter if you want to save the cache somewhere.
         
     ## Sentences for a given item (vocab word), as it appears in a given list of a given langauge. Not part of the offical iKnow! API, this is using the JSON response that iKnow's own listbuilder uses when you select sentences for an item in your list.
     #params:
@@ -442,11 +478,14 @@ if __name__ == "__main__":
     ## List Items Japanese Core 2000 Step 1 for english learners, including sentences
     #core2k1 = iknow.listItems(19053, True)
         
-    ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new IknowCache object because we're using a different native language here. Includes sentences
-    #iknowJp = IknowCache("username", "ja", ":memory:")
-    #core2k1 = iknowJp.listItems(705, True) #chinese media for english speakers: 35430
-    #for item in core2k1:
-    #    printItem(item)
+    ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
+    def callback(currentUrl, page, items):
+        print "getting %s page %s with %s items so far" % (currentUrl, page, items)
+    iknowJp = SmartFMCache("username", "en", ":memory:")
+    iknowJp.setCallback(callback)
+    core2k1 = iknowJp.listItems(19056, True) #chinese media for english speakers: 35430
+    for item in core2k1:
+        printItem(item)
     
     ## All the japanese items in all the user's lists
     #user_list_items = iknow.userListItems(False, "ja")

@@ -1,4 +1,4 @@
-from iknow import IknowCache
+from iknow import SmartFMCache
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
@@ -7,7 +7,7 @@ from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 
-import re, urllib
+import re, urllib, traceback, os
 
 VOCAB_MODEL_NAME = u"iKnow! Vocabulary"
 SENTENCE_MODEL_NAME = u"iKnow! Sentences"
@@ -194,7 +194,7 @@ def getListId():
             continue
         listId = re.search("lists/(\d+)", url)
         if not listId:
-            QMessageBox.warning(mw,"Warning", "Please enter a valid iKnow list URL. Example: http://www.iknow.co.jp/lists/19053-Japanese-Core-2000-Step-1")
+            QMessageBox.warning(mw,"Warning", "Please enter a valid Smart.fm list URL. Example: http://www.smart.fm/lists/19053-Japanese-Core-2000-Step-1")
             continue
         return listId.group(1)
 
@@ -246,8 +246,8 @@ class ProgressTracker:
 
 def preFetch():
     models = getModels()
-    progress = ProgressTracker("/tmp/iknowAnkiPluginLog.txt")
-    iknow = IknowCache(getUsername(), getNativeLangCode(), ":memory:")
+    progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
+    iknow = SmartFMCache(getUsername(), getNativeLangCode(), ":memory:")
     iknow.setCallback(progress.downloadCallback)
     return (progress, iknow, models)
 
@@ -257,14 +257,6 @@ def postFetch(progress, items, models, sentencesOnly):
     totalImported = 0
     totalDup = 0
     confirmTypes = getCachedImportConfirm()
-    maxImportsStr = getOnlyText("Enter the maximum number of items to import (will import this many sentences and this many vocabulary):").strip()
-    totalImportedByType = None
-    maxImports = None
-    try:
-        maxImports = int(maxImportsStr)
-        totalImportedByType = {'item' : 0, 'sentence' : 0}
-    except:
-        pass
     for i, item in enumerate(items):
         progress.importCallback(i, item["expression"])
         if sentencesOnly and item["type"] != "sentence":
@@ -272,18 +264,8 @@ def postFetch(progress, items, models, sentencesOnly):
         if confirmTypes and confirmTypes.find(item["type"]) >= 0:
             if not confirmImportOfItem(item):
                 continue
-        if totalImportedByType and totalImportedByType[item["type"]] >= maxImports:
-            continue
         if importIknowItem(item, sentenceModel, vocabModel):
             totalImported += 1
-            if totalImportedByType:
-                totalImportedByType[item["type"]] += 1
-                done = True
-                for key in totalImportedByType.keys():
-                    if totalImportedByType[key] < maxImports:
-                        done = False
-                if done:
-                    break
         else:
             totalDup += 1
     progress.dialog.cancel()
@@ -310,8 +292,9 @@ def importList(sentencesOnly=False):
     try:
         items = iknow.listItems(listId, True)
     except:
+        progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
-        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from iKnow!. Please check your internet connection and ensure you can reach http://api.iknow.co.jp.")
+        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm\n\nIf you are able to access smart.fm, please send 'iknow-smartfm-log.txt' from your plugins folder to the plugin developer.")
         mw.deck.save()
         mw.reset()
     else:
@@ -330,8 +313,9 @@ def importUserItems(sentencesOnly=False):
     try:
         items = iknow.userItems(True, getStudyingLangCode())
     except:
+        progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
-        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from iKnow!. Please check your internet connection and ensure you can reach http://api.iknow.co.jp.")
+        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm\n\nIf you are able to access smart.fm, please send 'iknow-smartfm-log.txt' from your plugins folder to the plugin developer.")
         mw.deck.save()
         mw.reset()
     else:
@@ -341,32 +325,32 @@ def importUserItemsSentencesOnly():
     importUserItems(True)
 
 userAll = QAction(mw)
-userAll.setText("iKnow - User Vocab and Sentences")
+userAll.setText("Smart.fm - User Vocab and Sentences")
 mw.connect(userAll, SIGNAL("triggered()"),
     importUserItems)
 
 userSent = QAction(mw)
-userSent.setText("iKnow - User Sentences")
+userSent.setText("Smart.fm - User Sentences")
 mw.connect(userSent, SIGNAL("triggered()"),
     importUserItemsSentencesOnly)
 
 listAll = QAction(mw)
-listAll.setText("iKnow - List Vocab and Sentences")
+listAll.setText("Smart.fm - List Vocab and Sentences")
 mw.connect(listAll, SIGNAL("triggered()"),
     importList)
 
 listSent = QAction(mw)
-listSent.setText("iKnow - List Sentences")
+listSent.setText("Smart.fm - List Sentences")
 mw.connect(listSent, SIGNAL("triggered()"),
     importListSentencesOnly)
     
 resetPrefs = QAction(mw)
-resetPrefs.setText("iKnow - Reset Username and Language")
+resetPrefs.setText("Smart.fm - Reset Username and Language")
 mw.connect(resetPrefs, SIGNAL("triggered()"),
     resetUserPrefs)
     
 clearPrefs = QAction(mw)
-clearPrefs.setText("iKnow - Clear Preferences")
+clearPrefs.setText("Smart.fm - Clear Preferences")
 mw.connect(clearPrefs, SIGNAL("triggered()"),
     clearUserPreferences)
 
@@ -381,7 +365,7 @@ mw.mainWin.menuTools.addAction(clearPrefs)
 
 #if not doModelsExist():
 setMods = QAction(mw)
-setMods.setText("iKnow - Customize Card Models")
+setMods.setText("Smart.fm - Customize Card Models")
 mw.connect(setMods, SIGNAL("triggered()"),
     makeModelsNow)
 mw.mainWin.menuTools.addAction(setMods)
