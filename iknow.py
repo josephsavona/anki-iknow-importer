@@ -6,7 +6,7 @@ from xml.sax.handler import feature_namespaces
 #for the smartfm api wrapper
 import urllib, urllib2, re, simplejson, os
 #for caching of smartfm list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
-import time, pprint
+import time
 try:
     from sqlite3 import dbapi2 as sqlite
 except:
@@ -31,8 +31,6 @@ if CACHE_API_RESULTS_PATH:
         hashedFilename = os.path.join(CACHE_API_RESULTS_PATH, hasher.hexdigest())
         if not os.path.exists(hashedFilename):
             urllib.urlretrieve(url, hashedFilename)
-        else:
-            print "DEBUG: using cached file %s" % (hashedFilename)
         return open(hashedFilename)
 else:
     def getUrlOrCache(url):
@@ -182,7 +180,6 @@ class SmartFMItemScanner(ContentHandler):
     
     def _addItem(self, item):
         if item["type"] == "sentence" and not self.includeSentences:
-            print "skipping sentence because not including sentences"
             return
         if 'meaning' in item and item["language"].lower() == self.target_language:
             rdg = u""
@@ -191,8 +188,6 @@ class SmartFMItemScanner(ContentHandler):
             elif 'expression' in item:
                 item['reading'] = u""
             else:
-                print "skipping item with no reading:"
-                pprint.pprint(item)
                 return #no reading or expression, so skip this item
             if 'expression' not in item or (self._hasKanji(rdg) and not self._hasKanji(item["expression"])):
                 tmp = item['expression']
@@ -206,9 +201,6 @@ class SmartFMItemScanner(ContentHandler):
             item['iknow_id'] = item['type'] + ':' + item['iknow_id']
             self.items[item['iknow_id']] = item
             self.count += 1
-        else:
-            print "skipping item:"
-            pprint.pprint(item)
 
     def _hasKanji(self, chars):
         for char in chars:
@@ -465,8 +457,21 @@ if __name__ == "__main__":
     #EXAMPLES: lines with one # are code, those with ## are comments
     
     ## Create an SmartFM API wrapper object with a default username and the user's native language code. Third parameter is either ':memory:' for an in memory cache, or "/Path/To/File.db" if you want to save the cache somewhere for reuse. List information is cached, to eliminate the need for repeated lookups of list information. List information is used so that you don't need to specify the language and translation language of a list manually when you grab list items/sentences.
-    iknow = SmartFMCache("username", "en", ":memory:") #use a file path for the 3rd parameter if you want to save the cache somewhere.
-        
+    
+    #START HERE - uncomment this
+    #iknow = SmartFMCache("username", "en", ":memory:") #use a file path for the 3rd parameter if you want to save the cache somewhere.
+    
+    #EXAMPLE 1
+    ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
+    #def callback(currentUrl, page, items):
+    #    print "getting %s page %s with %s items so far" % (currentUrl, page, items)
+    #iknowJp = SmartFMCache("username", "en", ":memory:")
+    #iknowJp.setCallback(callback)
+    #core2k1 = iknowJp.listItems(19056, True) #chinese media for english speakers: 35430
+    #for item in core2k1:
+    #    printItem(item)
+    
+    #OTHER EXAMPLES ARE BELOW
     ## Sentences for a given item (vocab word), as it appears in a given list of a given langauge. Not part of the offical iKnow! API, this is using the JSON response that iKnow's own listbuilder uses when you select sentences for an item in your list.
     #params:
     #   your list ID (make your own public list for adding items to)
@@ -479,13 +484,13 @@ if __name__ == "__main__":
     #core2k1 = iknow.listItems(19053, True)
         
     ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
-    def callback(currentUrl, page, items):
-        print "getting %s page %s with %s items so far" % (currentUrl, page, items)
-    iknowJp = SmartFMCache("username", "en", ":memory:")
-    iknowJp.setCallback(callback)
-    core2k1 = iknowJp.listItems(19056, True) #chinese media for english speakers: 35430
-    for item in core2k1:
-        printItem(item)
+    #def callback(currentUrl, page, items):
+    #    print "getting %s page %s with %s items so far" % (currentUrl, page, items)
+    #iknowJp = SmartFMCache("username", "en", ":memory:")
+    #iknowJp.setCallback(callback)
+    #core2k1 = iknowJp.listItems(19056, True) #chinese media for english speakers: 35430
+    #for item in core2k1:
+    #    printItem(item)
     
     ## All the japanese items in all the user's lists
     #user_list_items = iknow.userListItems(False, "ja")
