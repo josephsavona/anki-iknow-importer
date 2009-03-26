@@ -6,14 +6,14 @@ from xml.sax.handler import feature_namespaces
 #for the smartfm api wrapper
 import urllib, urllib2, re, simplejson, os
 #for caching of smartfm list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
-import time
+import time, operator
 try:
     from sqlite3 import dbapi2 as sqlite
 except:
     from pysqlite2 import dbapi2 as sqlite
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
-CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
+CACHE_API_RESULTS_PATH = os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
 
 #API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
 if CACHE_API_RESULTS_PATH:
@@ -29,6 +29,7 @@ if CACHE_API_RESULTS_PATH:
             url = url[0:-1]
         hasher = sha.new(url)
         hashedFilename = os.path.join(CACHE_API_RESULTS_PATH, hasher.hexdigest())
+        #DEBUG: print "caching %s at %s" % (url, hashedFilename)
         if not os.path.exists(hashedFilename):
             urllib.urlretrieve(url, hashedFilename)
         return open(hashedFilename)
@@ -103,17 +104,31 @@ class SmartFMItemScanner(ContentHandler):
         self.native_language = translationLanguageCode.lower()
         self.wrong_language = False
         self.includeSentences = includeSentences
+        self.preDefinedInformation = {}
+        self.itemIndexCounter = 0
+    
+    def defineBaseInfoForElement(self, iknowId, hash):
+        self.preDefinedInformation[iknowId] = hash
+        
+    def loadPreDefinedInfoIfExists(self, iknowId, hashObject):
+        if iknowId in self.preDefinedInformation:
+            for key in self.preDefinedInformation[iknowId].keys():
+                hashObject[key] = self.preDefinedInformation[iknowId][key]
         
     def startElement(self, name, attrs):
-        # If it's a comic element, save the title and issue
         if name == 'item':
+            self.itemIndexCounter += 1
             self.current_item = {'type' : u"item"}
-            self.current_item["iknow_id"] = attrs.get('id')
+            self.current_item["iknow_id"] = u"item:" + attrs.get('id')
             self.current_item["language"] = attrs.get('language')
+            self.loadPreDefinedInfoIfExists(self.current_item["iknow_id"], self.current_item)
+            if "_index" not in self.current_item:
+                self.current_item["_index"] = u"%s" % self.itemIndexCounter
             self.current_key = None
             self.current_object = self.current_item
             self.current_sentence = None
         elif name == 'sentence':
+            self.itemIndexCounter += 1
             if self.current_sentence:
                 if attrs.get('language').lower() != self.native_language:
                     self.wrong_language = True
@@ -121,8 +136,11 @@ class SmartFMItemScanner(ContentHandler):
                 self.dont_close = True
             elif not self.current_sentence:
                 self.current_sentence = {'type' : u"sentence"}
-                self.current_sentence["iknow_id"] = attrs.get('id')
+                self.current_sentence["iknow_id"] = u"sentence:" + attrs.get('id')
                 self.current_sentence["language"] = attrs.get('language')
+                self.loadPreDefinedInfoIfExists(self.current_sentence["iknow_id"], self.current_sentence)
+                if "_index" not in self.current_sentence:
+                    self.current_sentence["_index"] = u"%s" % self.itemIndexCounter
                 self.current_key = 'expression'
                 self.current_object = self.current_sentence
                 if self.current_item:
@@ -179,9 +197,18 @@ class SmartFMItemScanner(ContentHandler):
         self.current_key = None
     
     def _addItem(self, item):
+        doAddItem = False
         if item["type"] == "sentence" and not self.includeSentences:
             return
-        if 'meaning' in item and item["language"].lower() == self.target_language:
+        if self.target_language != self.native_language:
+            #items translating between languages must have a meaning
+            if 'meaning' in item:
+                doAddItem = True
+        else:
+            #items all in one language don't have to have a meaning
+            doAddItem = True
+        
+        if doAddItem:
             rdg = u""
             if 'reading' in item:
                 rdg = item['reading']
@@ -195,10 +222,18 @@ class SmartFMItemScanner(ContentHandler):
                 item['reading@hrkt'] = tmp
             for key in item.keys():
                 item[key] = item[key].strip()
-            for key in item.keys():
-                if key in ['expression', 'meaning'] or key.find("reading@") >= 0:
-                    item[key] = item[key].replace('<b>','').replace('</b>','')
-            item['iknow_id'] = item['type'] + ':' + item['iknow_id']
+            #NOTE - moving this code to iknow_import.py. it's up to the user of the iknow API wrapper how they want to present the data, we should return it as we get it.
+            #if 'meaning' not in item and 'item_meaning' in item:
+            #    item['meaning'] = item['item_meaning']
+            #for key in item.keys():
+            #    if key in ['expression', 'meaning'] or key.find("reading@") >= 0:
+            #        item[key] = item[key].replace('<b>','').replace('</b>','')
+            #if INCLUDE_ITEM_INFO_IN_SENTENCE_MEANING or (self.target_language == self.native_language):
+            #    if 'core_word' in item:
+            #        item['expression'] = item['expression'].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
+            #if INCLUDE_ITEM_INFO_IN_SENTENCE_MEANING:
+            #    item['meaning'] += u"<br />" + item['item_meaning']
+            
             self.items[item['iknow_id']] = item
             self.count += 1
 
@@ -286,18 +321,29 @@ class SmartFM:
             return allItems.values()
 
     def listItems(self, listId, includeSentences, langCode, translationLanguageCode, returnAsHash=False, includeItems=True):
-        scanner = SmartFMItemScanner(langCode, translationLanguageCode, False)
+        scanner = SmartFMItemScanner(langCode, translationLanguageCode, includeSentences)
         allItems = {}
         if includeItems:
             itemsUrl = SmartFM.SmartFM_API_URL + "/lists/%s/items.xml" % listId
-            items = self._allItemsUntilEmpty(scanner, itemsUrl, {}, False, True)
-            allItems.update(items)
+            items = self._allItemsUntilEmpty(scanner, itemsUrl, {}, True, True)
+            for key in items.keys():
+                if items[key]["type"] == "item":
+                    allItems[key] = items[key]
+                else:
+                    if "item_id" in items[key]:
+                        correspItem = items[items[key]["item_id"]]
+                        scanner.defineBaseInfoForElement(items[key]["iknow_id"], {"item_meaning" : correspItem['expression'] + " -- " + correspItem["meaning"], "_index" : correspItem["_index"], "core_word" : correspItem['expression']})
         if includeSentences:
             sentencesUrl = SmartFM.SmartFM_API_URL + "/lists/%s/sentences.xml" % listId
             scanner.includeSentences = True
             sentences = self._allItemsUntilEmpty(scanner, sentencesUrl, {}, True, True)
             allItems.update(sentences)
-        return allItems.values()
+        if returnAsHash:
+            return allItems
+        else:
+            values = allItems.values()
+            values.sort(key=operator.itemgetter('_index'))
+            return values
         
     def userItems(self, includeSentences=True, langCode=None):
         url = SmartFM.SmartFM_API_URL + "/users/%s/items.xml" % self.username
@@ -450,9 +496,49 @@ if __name__ == "__main__":
                 transliterations.append(key)
         print "id:\t%s" % item["iknow_id"]
         print "meaning:\t%s\nexpression:\t%s\ntype:\t%s" % (item["meaning"], item["expression"], item["type"])
+        if "_index" in item:
+            print "index:\t%s" % (item["_index"])
+        if "core_word" in item:
+            print "core word:\t%s" % (item['core_word'])
+        if "item_meaning" in item:
+            print "item meaning:\t%s" % (item["item_meaning"])
         for key in transliterations:
             print "%s:\t%s" % (key.encode('utf-8'), item[key])
         print ""
+    
+    ENABLE_ITEM_MEANING_IN_SENTENCE_MEANING = True
+    ENABLE_REMOVING_BOLD_TAGS = True
+    ENABLE_BOLDING_ITEM_IN_SENTENCE = True
+
+    def formatIknowItemPreImport(item):
+        mainKeys = ["meaning", "expression", "reading"]
+        hasOwnMeaning = True
+        #store the reading
+        if item["language"] == "ja" and "reading@hrkt" in item:
+            item['reading'] = item["reading@hrkt"]
+        elif "reading@latn" in item:
+            item['reading'] = item["reading@latn"]
+        else:
+            item["reading"] = u""
+            
+        if 'meaning' not in item:
+            hasOwnMeaning = False
+            
+        #for sentences in a monolingual list, use the item meaning 
+        if 'meaning' not in item and 'item_meaning' in item:
+            item['meaning'] = item['item_meaning']
+        elif ENABLE_ITEM_MEANING_IN_SENTENCE_MEANING and 'item_meaning' in item:
+            #note this only applies when the sentence already has its own meaning and we are possibly adding to it
+            item['meaning'] += u"<br />" + item['item_meaning']
+        
+        if hasOwnMeaning and ENABLE_REMOVING_BOLD_TAGS:
+            for key in mainKeys:
+                item[key] = item[key].replace('<b>','').replace('</b>','')
+        if not hasOwnMeaning and ENABLE_BOLDING_ITEM_IN_SENTENCE and 'core_word' in item:
+            for key in mainKeys:
+                if item[key].find('<b>') >= 0:
+                    continue
+                item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
     
     #EXAMPLES: lines with one # are code, those with ## are comments
     
@@ -465,11 +551,17 @@ if __name__ == "__main__":
     ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
     #def callback(currentUrl, page, items):
     #    print "getting %s page %s with %s items so far" % (currentUrl, page, items)
-    #iknowJp = SmartFMCache("username", "en", ":memory:")
+    iknowJp = SmartFMCache("username", "en", ":memory:")
     #iknowJp.setCallback(callback)
-    #core2k1 = iknowJp.listItems(19056, True) #chinese media for english speakers: 35430
-    #for item in core2k1:
-    #    printItem(item)
+    core2k1 = iknowJp.listItems(700, True) 
+        #chinese media for english speakers: 35430
+        #japanese core 2k 19056
+        #english to english SAT 700
+    import operator
+    core2k1.sort(key=operator.itemgetter('_index'))
+    for item in core2k1:
+        formatIknowItemPreImport(item)
+        printItem(item)
     
     #OTHER EXAMPLES ARE BELOW
     ## Sentences for a given item (vocab word), as it appears in a given list of a given langauge. Not part of the offical iKnow! API, this is using the JSON response that iKnow's own listbuilder uses when you select sentences for an item in your list.

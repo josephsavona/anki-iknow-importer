@@ -13,6 +13,15 @@ VOCAB_MODEL_NAME = u"iKnow! Vocabulary"
 SENTENCE_MODEL_NAME = u"iKnow! Sentences"
 IMPORT_AUDIO = True
 
+#append the meaning of the primary word in a sentence to the end of the sentence's meaning (this is generally the back of the card)
+ENABLE_PRIMARY_WORD_MEANING_IN_SENTENCE_MEANING = True
+
+#bold the primary word in a sentence - for bilingual lists (eg english speaker learning japanese). by default this is off, because it can be very difficult to read Japanese/Chinese characters when they're bolded.
+ENABLE_PRIMARY_WORD_BOLDING_FOR_BILINGUAL_LISTS = False
+
+#for monolingual lists (like the english only SAT prep lists), bold the primary word in the sentence.
+ENABLE_PRIMARY_WORD_BOLDING_FOR_MONOLINGUAL_LISTS = True
+
 #def doModelsExist():
 #    vocab = False
 #    sent = False
@@ -83,8 +92,40 @@ def ensureVocabModelExists(production=True, reading=True, listening=True):
 
 def ensureSentenceModelExists(production=True, reading=True, listening=True):
     return ensureModelExists(SENTENCE_MODEL_NAME, production, reading, listening)
+
+def formatIknowItemPreImport(item):
+    mainKeys = ["meaning", "expression", "reading"]
+    hasOwnMeaning = True
+    #store the reading
+    if item["language"] == "ja" and "reading@hrkt" in item:
+        item['reading'] = item["reading@hrkt"]
+    elif "reading@latn" in item:
+        item['reading'] = item["reading@latn"]
+    else:
+        item["reading"] = u""
         
-def importIknowItem(item, sentenceModel, vocabModel, readingType=None):
+    if 'meaning' not in item:
+        hasOwnMeaning = False
+        
+    #for sentences in a monolingual list, use the item meaning 
+    if 'meaning' not in item and 'item_meaning' in item:
+        item['meaning'] = item['item_meaning']
+    elif ENABLE_PRIMARY_WORD_MEANING_IN_SENTENCE_MEANING and 'item_meaning' in item:
+        #note this only applies when the sentence already has its own meaning and we are possibly adding to it
+        item['meaning'] += u"<br />" + item['item_meaning']
+    
+    #if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
+    if hasOwnMeaning and not ENABLE_PRIMARY_WORD_BOLDING_FOR_BILINGUAL_LISTS:
+        for key in mainKeys:
+            item[key] = item[key].replace('<b>','').replace('</b>','')
+    #if monolingual list, and we DO want bolding on monolingual lists, then bold the primary word if it isn't already bolded        
+    if not hasOwnMeaning and ENABLE_PRIMARY_WORD_BOLDING_FOR_MONOLINGUAL_LISTS and 'core_word' in item:
+        for key in mainKeys:
+            if item[key].find('<b>') >= 0:
+                continue
+            item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
+ 
+def importIknowItem(item, sentenceModel, vocabModel):
     query = mw.deck.s.query(Field).filter_by(value=item["iknow_id"])
     field = query.first()
     if field:
@@ -94,28 +135,31 @@ def importIknowItem(item, sentenceModel, vocabModel, readingType=None):
         model = vocabModel
     elif item["type"] == "sentence":
         model = sentenceModel
+    formatIknowItemPreImport(item)
     fact = mw.deck.newFact(model)
     fact['iKnowID'] = item["iknow_id"]
     fact['Expression'] = item["expression"]
     fact['Meaning'] = item["meaning"]
     fact['iKnowType'] = item["type"]
-    if readingType and "reading@%s" % readingType.lower() in item:
-        fact['Reading'] = item["reading@%s" % readingType.lower()]
-    else:
-        if item["language"] == "ja" and "reading@hrkt" in item:
-            fact['Reading'] = item["reading@hrkt"]
-        elif "reading@latn" in item:
-            fact['Reading'] = item["reading@latn"]
-        else:
-            fact['Reading'] = u""
+    fact['Reading'] = item["reading"]
     if "image_uri" in item:
         fact['Image_URI'] = u'<img src="%s" alt="[No Image]" />' % item["image_uri"]
     else:
         fact['Image_URI'] = u""
     if IMPORT_AUDIO and "audio_uri" in item:
-        (filePath, headers) = urllib.urlretrieve(item["audio_uri"])
-        path = mw.deck.addMedia(filePath)
-        fact['Audio'] = u"[sound:%s]" % path
+        tries = 0
+        gotAudioForItem = False
+        while not gotAudioForItem and tries < 3:
+            tries += 1
+            try:
+                (filePath, headers) = urllib.urlretrieve(item["audio_uri"])
+                path = mw.deck.addMedia(filePath)
+                fact['Audio'] = u"[sound:%s]" % path
+                gotAudioForItem = True
+            except:
+                pass
+        if not gotAudioForItem:
+            raise Exception, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item["audio_uri"]
     else:
         item["audio_uri"] = u""
     mw.deck.addFact(fact)
@@ -298,7 +342,12 @@ def importList(sentencesOnly=False):
         mw.deck.save()
         mw.reset()
     else:
-        postFetch(progress, items, models, sentencesOnly)
+        try:
+            postFetch(progress, items, models, sentencesOnly)
+        except:
+            progress.logMsg(traceback.format_exc())
+            progress.dialog.cancel()
+            QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers. Please try your import again.")
 
 def importListSentencesOnly():
     importList(True)
@@ -319,7 +368,12 @@ def importUserItems(sentencesOnly=False):
         mw.deck.save()
         mw.reset()
     else:
-        postFetch(progress, items, models, sentencesOnly)
+        try:
+            postFetch(progress, items, models, sentencesOnly)
+        except:
+            progress.logMsg(traceback.format_exc())
+            progress.dialog.cancel()
+            QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers. Please try your import again.")
 
 def importUserItemsSentencesOnly():
     importUserItems(True)
