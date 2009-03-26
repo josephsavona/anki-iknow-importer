@@ -13,7 +13,7 @@ except:
     from pysqlite2 import dbapi2 as sqlite
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
-CACHE_API_RESULTS_PATH = os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
+CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
 
 #API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
 if CACHE_API_RESULTS_PATH:
@@ -506,40 +506,6 @@ if __name__ == "__main__":
             print "%s:\t%s" % (key.encode('utf-8'), item[key])
         print ""
     
-    ENABLE_ITEM_MEANING_IN_SENTENCE_MEANING = True
-    ENABLE_REMOVING_BOLD_TAGS = True
-    ENABLE_BOLDING_ITEM_IN_SENTENCE = True
-
-    def formatIknowItemPreImport(item):
-        mainKeys = ["meaning", "expression", "reading"]
-        hasOwnMeaning = True
-        #store the reading
-        if item["language"] == "ja" and "reading@hrkt" in item:
-            item['reading'] = item["reading@hrkt"]
-        elif "reading@latn" in item:
-            item['reading'] = item["reading@latn"]
-        else:
-            item["reading"] = u""
-            
-        if 'meaning' not in item:
-            hasOwnMeaning = False
-            
-        #for sentences in a monolingual list, use the item meaning 
-        if 'meaning' not in item and 'item_meaning' in item:
-            item['meaning'] = item['item_meaning']
-        elif ENABLE_ITEM_MEANING_IN_SENTENCE_MEANING and 'item_meaning' in item:
-            #note this only applies when the sentence already has its own meaning and we are possibly adding to it
-            item['meaning'] += u"<br />" + item['item_meaning']
-        
-        if hasOwnMeaning and ENABLE_REMOVING_BOLD_TAGS:
-            for key in mainKeys:
-                item[key] = item[key].replace('<b>','').replace('</b>','')
-        if not hasOwnMeaning and ENABLE_BOLDING_ITEM_IN_SENTENCE and 'core_word' in item:
-            for key in mainKeys:
-                if item[key].find('<b>') >= 0:
-                    continue
-                item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
-    
     #EXAMPLES: lines with one # are code, those with ## are comments
     
     ## Create an SmartFM API wrapper object with a default username and the user's native language code. Third parameter is either ':memory:' for an in memory cache, or "/Path/To/File.db" if you want to save the cache somewhere for reuse. List information is cached, to eliminate the need for repeated lookups of list information. List information is used so that you don't need to specify the language and translation language of a list manually when you grab list items/sentences.
@@ -551,17 +517,16 @@ if __name__ == "__main__":
     ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
     #def callback(currentUrl, page, items):
     #    print "getting %s page %s with %s items so far" % (currentUrl, page, items)
-    iknowJp = SmartFMCache("username", "en", ":memory:")
+    #iknowJp = SmartFMCache("username", "en", ":memory:")
     #iknowJp.setCallback(callback)
-    core2k1 = iknowJp.listItems(700, True) 
+    #core2k1 = iknowJp.listItems(700, True) 
         #chinese media for english speakers: 35430
         #japanese core 2k 19056
         #english to english SAT 700
-    import operator
-    core2k1.sort(key=operator.itemgetter('_index'))
-    for item in core2k1:
-        formatIknowItemPreImport(item)
-        printItem(item)
+    #import operator
+    #core2k1.sort(key=operator.itemgetter('_index'))
+    #for item in core2k1:
+    #    printItem(item)
     
     #OTHER EXAMPLES ARE BELOW
     ## Sentences for a given item (vocab word), as it appears in a given list of a given langauge. Not part of the offical iKnow! API, this is using the JSON response that iKnow's own listbuilder uses when you select sentences for an item in your list.
