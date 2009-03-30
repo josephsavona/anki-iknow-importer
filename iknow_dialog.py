@@ -5,9 +5,12 @@ from ankiqt import mw
 from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
-import os, re, time, urllib
-from iknow import SmartFMCache
+import os, re, time, urllib, traceback
+from iknow import SmartFMCache, SmartFMDownloadError
 
+
+class AudioDownloadError(Exception):
+    pass
 
 class SmartFMModelCustomizeDialog(QtGui.QDialog):
     def __init__(self, cardSettings, showVocab, showSentence):
@@ -302,7 +305,7 @@ class ProgressTracker:
     def __init__(self, log=None):
         self.dialog = QtGui.QProgressDialog(_("Importing..."), "", 0, 0, mw)
         self.dialog.setCancelButton(None)
-        self.dialog.setMaximum(100)
+        self.dialog.setMaximum(0)
         self.dialog.setMinimumDuration(0)
         self.dialog.setLabelText("Starting import..")
         self.currentPercent = 0
@@ -390,7 +393,7 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
         model = vocabModel
     elif item["type"] == "sentence":
         model = sentenceModel
-    formatIknowItemPreImport(item, importSettings)
+    
     fact = mw.deck.newFact(model)
     fact['iKnowID'] = item["iknow_id"]
     fact['Expression'] = item["expression"]
@@ -414,7 +417,7 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
             except:
                 pass
         if not gotAudioForItem:
-            raise Exception, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item["audio_uri"]
+            raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item["audio_uri"]
     else:
         item["audio_uri"] = u""
     mw.deck.addFact(fact)
@@ -424,30 +427,53 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
 
 
 def runImport(modelManager, importSettings):
-    progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
-    iknow = SmartFMCache("", "", ":memory:")
-    iknow.setCallback(progress.downloadCallback)
-    items = iknow.listItems(importSettings.listId, importSettings.importSentences)
-    progress.preImportResetProgress(len(items))
-    totalImported = 0
-    totalDup = 0
-    for i, item in enumerate(items):
-        if importSettings.maxItems > 0 and totalImported >= importSettings.maxItems:
-            break
-        progress.importCallback(i, item["expression"])
-        if not importSettings.importSentences and item["type"] == "sentence":
-            continue
-        if not importSettings.importVocab and item["type"] == "item":
-            continue
-        if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
-            totalImported += 1
-        else:
-            totalDup += 1
-    progress.dialog.cancel()
-    progress.close()
-    mw.deck.save()
-    mw.reset(mw.mainWin)
-    QMessageBox.information(mw,"Summary","Import complete. Imported %s items and skipped %s duplicates." % (totalImported, totalDup))
+    try:
+        progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
+        iknow = SmartFMCache(None, None, ":memory:")
+        iknow.setCallback(progress.downloadCallback)
+        items = iknow.listItems(importSettings.listId, importSettings.importSentences)
+        progress.preImportResetProgress(len(items))
+        totalImported = 0
+        totalDup = 0
+        totalImportedByType = {"item" : 0, "sentence" : 0}
+        for i, item in enumerate(items):
+            if importSettings.maxItems > 0 and totalImported >= importSettings.maxItems:
+                break
+            if not importSettings.importSentences and item["type"] == "sentence":
+                continue
+            if not importSettings.importVocab and item["type"] == "item":
+                continue
+            formatIknowItemPreImport(item, importSettings)
+            progress.importCallback(i, item["expression"])
+            if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
+                totalImported += 1
+                totalImportedByType[item["type"]] = totalImportedByType[item["type"]] + 1
+            else:
+                totalDup += 1
+        progress.dialog.cancel()
+        progress.close()
+        mw.deck.save()
+        mw.reset(mw.mainWin)
+        QMessageBox.information(mw,"Summary","Import complete. Imported %s items, %s sentences, and skipped %s duplicates." % (totalImportedByType["item"], totalImportedByType["sentence"], totalDup))
+    except AudioDownloadError:
+        progress.logMsg(traceback.format_exc())
+        progress.dialog.cancel()
+        progress.close()
+        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers. Please try your import again.")
+        mw.reset(mw.mainWin)
+    except SmartFMDownloadError:
+        progress.logMsg(traceback.format_exc())
+        progress.dialog.cancel()
+        progress.close()
+        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm\n\nIf you are able to access smart.fm, please send the file 'iknow-smartfm-log.txt' (in the Anki plugins folder) to the plugin developer. See the IKNOW_IMPORT_README file for contact details.")
+        mw.reset(mw.mainWin)
+    except:
+        progress.logMsg(traceback.format_exc())
+        progress.dialog.cancel()
+        progress.close()
+        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer (see the IKNOW_IMPORT_READEM.txt file in your plugin folder for contact info).")
+        mw.reset(mw.mainWin)
+
 
 
 def runDialog():

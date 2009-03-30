@@ -6,14 +6,15 @@ from xml.sax.handler import feature_namespaces
 #for the smartfm api wrapper
 import urllib, urllib2, re, simplejson, os
 #for caching of smartfm list data (so that we can save time looking up the list's language and translation language, which are useful when parsing the list itself)
-import time, operator
+import time, operator, traceback
 try:
     from sqlite3 import dbapi2 as sqlite
 except:
     from pysqlite2 import dbapi2 as sqlite
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
-CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
+#TODO
+CACHE_API_RESULTS_PATH = os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
 
 #API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
 if CACHE_API_RESULTS_PATH:
@@ -39,6 +40,10 @@ else:
             url = url[0:-1]
         return urllib2.urlopen(url)
 
+class SmartFMDownloadError(Exception):
+    pass
+
+
 class SmartFMListScanner(ContentHandler):
     def __init__(self):
         self.lists = {}
@@ -58,7 +63,7 @@ class SmartFMListScanner(ContentHandler):
             self.collect_chars= True
         else:
             self.collect_chars = False
-
+            
     def endElement(self, name):
         self.collect_chars = False
         self.current_key = None
@@ -107,8 +112,12 @@ class SmartFMItemScanner(ContentHandler):
         self.preDefinedInformation = {}
         self.itemIndexCounter = 0
     
-    def defineBaseInfoForElement(self, iknowId, hash):
-        self.preDefinedInformation[iknowId] = hash
+    def defineBaseInfoForElementIfNotExists(self, iknowId, hash):
+        if iknowId not in self.preDefinedInformation:
+            self.preDefinedInformation[iknowId] = hash
+        #DEBUG
+        if hash["_index"] == 61 or iknowId == "sentence:247773":
+            print "found minister iknowId %s index %s" % (iknowId, hash["_index"])
         
     def loadPreDefinedInfoIfExists(self, iknowId, hashObject):
         if iknowId in self.preDefinedInformation:
@@ -123,7 +132,7 @@ class SmartFMItemScanner(ContentHandler):
             self.current_item["language"] = attrs.get('language')
             self.loadPreDefinedInfoIfExists(self.current_item["iknow_id"], self.current_item)
             if "_index" not in self.current_item:
-                self.current_item["_index"] = u"%s" % self.itemIndexCounter
+                self.current_item["_index"] = self.itemIndexCounter
             self.current_key = None
             self.current_object = self.current_item
             self.current_sentence = None
@@ -140,11 +149,13 @@ class SmartFMItemScanner(ContentHandler):
                 self.current_sentence["language"] = attrs.get('language')
                 self.loadPreDefinedInfoIfExists(self.current_sentence["iknow_id"], self.current_sentence)
                 if "_index" not in self.current_sentence:
-                    self.current_sentence["_index"] = u"%s" % self.itemIndexCounter
+                    self.current_sentence["_index"] = self.itemIndexCounter
                 self.current_key = 'expression'
                 self.current_object = self.current_sentence
                 if self.current_item:
                     self.current_sentence["item_id"] = self.current_item["iknow_id"]
+                elif self.current_sentence["iknow_id"] == "sentence:247773": #DEBUG
+                    print "found minister sentence has no item"
         elif name == 'text' or name == 'sound' or name == 'image':
             if self.wrong_language:
                 self.collect_chars = False
@@ -220,19 +231,18 @@ class SmartFMItemScanner(ContentHandler):
                 tmp = item['expression']
                 item['expression'] = item['reading']
                 item['reading@hrkt'] = tmp
+            #DEBUG:
+            if '_index' in item:
+                item['expression'] = item['expression'] + str(item["_index"])
+            #DEBUG:
+            if item["iknow_id"] == "sentence:247773" or (item["_index"] == 61):
+                print "found minister id %s sentence index %s item_id %s" % (item["iknow_id"], item["_index"], "")
+                if "item_id" in item:
+                    print "\tat item_id %s" % item["item_id"]
+            
             for key in item.keys():
+                if key == "_index": continue
                 item[key] = item[key].strip()
-            #NOTE - moving this code to iknow_import.py. it's up to the user of the iknow API wrapper how they want to present the data, we should return it as we get it.
-            #if 'meaning' not in item and 'item_meaning' in item:
-            #    item['meaning'] = item['item_meaning']
-            #for key in item.keys():
-            #    if key in ['expression', 'meaning'] or key.find("reading@") >= 0:
-            #        item[key] = item[key].replace('<b>','').replace('</b>','')
-            #if INCLUDE_ITEM_INFO_IN_SENTENCE_MEANING or (self.target_language == self.native_language):
-            #    if 'core_word' in item:
-            #        item['expression'] = item['expression'].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
-            #if INCLUDE_ITEM_INFO_IN_SENTENCE_MEANING:
-            #    item['meaning'] += u"<br />" + item['item_meaning']
             
             self.items[item['iknow_id']] = item
             self.count += 1
@@ -272,6 +282,22 @@ class SmartFMImporter:
     
     def printAll(self):
         self.handler.printItems()
+
+
+class SmartFMItemSorter:
+    def __init__(self):
+        pass
+        
+    def __call__(self, x, y):
+        if x["_index"] == y["_index"]:
+            if x["type"].lower() == "item" and y["type"].lower() == "sentence":
+                return -1
+            elif x["type"].lower() == "sentence" and y["type"].lower() == "item":
+                return 1
+            else:
+                return 0
+        else:
+            return cmp(x["_index"], y["_index"])
 
 class SmartFM:
     SmartFM_STD_URL = "http://smart.fm"
@@ -326,13 +352,14 @@ class SmartFM:
         if includeItems:
             itemsUrl = SmartFM.SmartFM_API_URL + "/lists/%s/items.xml" % listId
             items = self._allItemsUntilEmpty(scanner, itemsUrl, {}, True, True)
-            for key in items.keys():
-                if items[key]["type"] == "item":
-                    allItems[key] = items[key]
-                else:
-                    if "item_id" in items[key]:
-                        correspItem = items[items[key]["item_id"]]
-                        scanner.defineBaseInfoForElement(items[key]["iknow_id"], {"item_meaning" : correspItem['expression'] + " -- " + correspItem["meaning"], "_index" : correspItem["_index"], "core_word" : correspItem['expression']})
+            itemValues = items.values()
+            itemValues.sort(SmartFMItemSorter())
+            for itemorsent in itemValues:
+                if itemorsent["type"] == "item":
+                    allItems[itemorsent["iknow_id"]] = itemorsent
+                elif "item_id" in itemorsent:
+                    correspItem = items[itemorsent["item_id"]]
+                    scanner.defineBaseInfoForElementIfNotExists(itemorsent["iknow_id"], {"item_meaning" : correspItem['expression'] + " -- " + correspItem["meaning"], "_index" : correspItem["_index"], "core_word" : correspItem['expression']})
         if includeSentences:
             sentencesUrl = SmartFM.SmartFM_API_URL + "/lists/%s/sentences.xml" % listId
             scanner.includeSentences = True
@@ -342,7 +369,7 @@ class SmartFM:
             return allItems
         else:
             values = allItems.values()
-            values.sort(key=operator.itemgetter('_index'))
+            values.sort(SmartFMItemSorter())
             return values
         
     def userItems(self, includeSentences=True, langCode=None):
@@ -454,34 +481,46 @@ class SmartFMCache(SmartFM):
             return r    
     
     def list(self, listId):
-        iknowlist = self._getList(listId)
-        if iknowlist:
+        try:
+            iknowlist = self._getList(listId)
+            if iknowlist:
+                return iknowlist
+            iknowlist = SmartFM.list(self, listId)
+            self._storeList(listHash = iknowlist)
             return iknowlist
-        iknowlist = SmartFM.list(self, listId)
-        self._storeList(listHash = iknowlist)
-        return iknowlist
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def listItems(self, listId, includeSentences=True, returnAsHash=False):
-        iknowlist = self.list(listId)
-        return SmartFM.listItems(self, listId, includeSentences, iknowlist["language"], iknowlist['translation_language'], returnAsHash)
+        try:
+            iknowlist = self.list(listId)
+            return SmartFM.listItems(self, listId, includeSentences, iknowlist["language"], iknowlist['translation_language'], returnAsHash)
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def userLists(self):
-        timeNow = time.time()
-        if self.userListsCached and timeNow - self.userListsCachedTime < 300: #cache five minutes, I imagine most people will probably run a couple imports in a row, possibly, and then not import for a while
-            return self.userListsCached
-        userLists = SmartFM.userLists(self)
-        self._storeLists(listHashList = userLists)
-        self.userListsCached = userLists
-        self.userListsCachedTime = time.time()
-        return userLists
+        try:
+            timeNow = time.time()
+            if self.userListsCached and timeNow - self.userListsCachedTime < 300: #cache five minutes, I imagine most people will probably run a couple imports in a row, possibly, and then not import for a while
+                return self.userListsCached
+            userLists = SmartFM.userLists(self)
+            self._storeLists(listHashList = userLists)
+            self.userListsCached = userLists
+            self.userListsCachedTime = time.time()
+            return userLists
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def userListItems(self, includeSentences=True, langCode=None):
-        userLists = self.userLists()
-        allItems = {}
-        for iknowlist in userLists:
-            listItems = self.listItems(iknowlist["iknow_id"], includeSentences, True)
-            allItems.update(listItems)
-        return allItems.values()
+        try:
+            userLists = self.userLists()
+            allItems = {}
+            for iknowlist in userLists:
+                listItems = self.listItems(iknowlist["iknow_id"], includeSentences, True)
+                allItems.update(listItems)
+            return allItems.values()
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
         
 
 if __name__ == "__main__":
@@ -491,7 +530,10 @@ if __name__ == "__main__":
     def printItem(item):
         transliterations = list()
         for key in item.keys():
-            item[key] = item[key].encode('utf-8')
+            try:
+                item[key] = item[key].encode('utf-8')
+            except:
+                pass
             if key.find("reading") >= 0:
                 transliterations.append(key)
         print "id:\t%s" % item["iknow_id"]
@@ -515,18 +557,16 @@ if __name__ == "__main__":
     
     #EXAMPLE 1
     ## List Items English Core 2000 Step 1, for Japanese learners. Uses a new SmartFMCache object because we're using a different native language here. Includes sentences
-    #def callback(currentUrl, page, items):
-    #    print "getting %s page %s with %s items so far" % (currentUrl, page, items)
-    #iknowJp = SmartFMCache("username", "en", ":memory:")
-    #iknowJp.setCallback(callback)
-    #core2k1 = iknowJp.listItems(700, True) 
+    def callback(currentUrl, page, items):
+        print "getting %s page %s with %s items so far" % (currentUrl, page, items)
+    iknowJp = SmartFMCache("username", "en", ":memory:")
+    iknowJp.setCallback(callback)
+    core2k1 = iknowJp.listItems(19056, True) 
         #chinese media for english speakers: 35430
         #japanese core 2k 19056
         #english to english SAT 700
-    #import operator
-    #core2k1.sort(key=operator.itemgetter('_index'))
-    #for item in core2k1:
-    #    printItem(item)
+    for item in core2k1:
+        printItem(item)
     
     #OTHER EXAMPLES ARE BELOW
     ## Sentences for a given item (vocab word), as it appears in a given list of a given langauge. Not part of the offical iKnow! API, this is using the JSON response that iKnow's own listbuilder uses when you select sentences for an item in your list.
