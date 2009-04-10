@@ -116,8 +116,8 @@ class SmartFMItemScanner(ContentHandler):
         if iknowId not in self.preDefinedInformation:
             self.preDefinedInformation[iknowId] = hash
         #DEBUG
-        if hash["_index"] == 61 or iknowId == "sentence:247773":
-            print "found minister iknowId %s index %s" % (iknowId, hash["_index"])
+        #if hash["_index"] == 61 or iknowId == "sentence:247773":
+        #    print "found minister iknowId %s index %s" % (iknowId, hash["_index"])
         
     def loadPreDefinedInfoIfExists(self, iknowId, hashObject):
         if iknowId in self.preDefinedInformation:
@@ -154,8 +154,8 @@ class SmartFMItemScanner(ContentHandler):
                 self.current_object = self.current_sentence
                 if self.current_item:
                     self.current_sentence["item_id"] = self.current_item["iknow_id"]
-                elif self.current_sentence["iknow_id"] == "sentence:247773": #DEBUG
-                    print "found minister sentence has no item"
+                #elif self.current_sentence["iknow_id"] == "sentence:247773": #DEBUG
+                #    print "found minister sentence has no item"
         elif name == 'text' or name == 'sound' or name == 'image':
             if self.wrong_language:
                 self.collect_chars = False
@@ -232,13 +232,13 @@ class SmartFMItemScanner(ContentHandler):
                 item['expression'] = item['reading']
                 item['reading@hrkt'] = tmp
             #DEBUG:
-            if '_index' in item:
-                item['expression'] = item['expression'] + str(item["_index"])
+            #if '_index' in item:
+            #    item['expression'] = item['expression'] + str(item["_index"])
             #DEBUG:
-            if item["iknow_id"] == "sentence:247773" or (item["_index"] == 61):
-                print "found minister id %s sentence index %s item_id %s" % (item["iknow_id"], item["_index"], "")
-                if "item_id" in item:
-                    print "\tat item_id %s" % item["item_id"]
+            #if item["iknow_id"] == "sentence:247773" or (item["_index"] == 61):
+            #    print "found minister id %s sentence index %s item_id %s" % (item["iknow_id"], item["_index"], "")
+            #    if "item_id" in item:
+            #        print "\tat item_id %s" % item["item_id"]
             
             for key in item.keys():
                 if key == "_index": continue

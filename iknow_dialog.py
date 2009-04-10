@@ -6,7 +6,7 @@ from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 import os, re, time, urllib, traceback
-from iknow import SmartFMCache, SmartFMDownloadError
+from iknow_dom import *
 
 
 class AudioDownloadError(Exception):
@@ -353,73 +353,71 @@ def formatIknowItemPreImport(item, importSettings):
     mainKeys = ["meaning", "expression", "reading"]
     hasOwnMeaning = True
     #store the reading
-    if item["language"] == "ja" and "reading@hrkt" in item:
-        item['reading'] = item["reading@hrkt"]
-    elif "reading@latn" in item:
-        item['reading'] = item["reading@latn"]
-    else:
-        item["reading"] = u""
+    if not item.reading:
+        item.reading = u""
         
-    if 'meaning' not in item:
+    if not item.meaning:
         hasOwnMeaning = False
         
     #for sentences in a monolingual list, use the item meaning 
-    if 'meaning' not in item and 'item_meaning' in item:
+    if not item.meaning and len(item.secondary_meanings) > 0:
         item['meaning'] = item['item_meaning']
-    elif importSettings.includeItemMeaning and 'item_meaning' in item:
+    elif importSettings.includeItemMeaning and len(item.secondary_meanings) > 0:
         #note this only applies when the sentence already has its own meaning and we are possibly adding to it
-        item['meaning'] += u"<br />" + item['item_meaning']
-        
-    #if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
-    if hasOwnMeaning and not importSettings.boldBilingualKeywords:
-        for key in mainKeys:
-            item[key] = item[key].replace('<b>','').replace('</b>','')
-    #if monolingual list, and we DO want bolding on monolingual lists, then bold the primary word if it isn't already bolded        
-    if not hasOwnMeaning and importSettings.boldMonolingualKeywords and 'core_word' in item:
-        for key in mainKeys:
-            if item[key].find('<b>') >= 0:
-                continue
-            item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
+        for secondary in item.secondary_meanings:
+            item.meaning = item.meaning + u"<br />" + secondary
+    
+    #TODO: get working with the new iknow_dom    
+    ###if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
+    #if hasOwnMeaning and not importSettings.boldBilingualKeywords:
+    #    for key in mainKeys:
+    #        item[key] = item[key].replace('<b>','').replace('</b>','')
+    ###if monolingual list, and we DO want bolding on monolingual lists, then bold the primary word if it isn't already bolded        
+    #if not hasOwnMeaning and importSettings.boldMonolingualKeywords and 'core_word' in item:
+    #    for key in mainKeys:
+    #        if item[key].find('<b>') >= 0:
+    #            continue
+    #        item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
 
 
 
 def importIknowItem(item, sentenceModel, vocabModel, importSettings):
-    query = mw.deck.s.query(Field).filter_by(value=item["iknow_id"])
+    query = mw.deck.s.query(Field).filter_by(value=item.uniqIdStr())
     field = query.first()
     if field:
         return False#is duplicate, so return immediately
         
-    if item["type"] == "item":
+    if item.type == "item":
         model = vocabModel
-    elif item["type"] == "sentence":
+    elif item.type == "sentence":
         model = sentenceModel
     
     fact = mw.deck.newFact(model)
-    fact['iKnowID'] = item["iknow_id"]
-    fact['Expression'] = item["expression"]
-    fact['Meaning'] = item["meaning"]
-    fact['iKnowType'] = item["type"]
-    fact['Reading'] = item["reading"]
-    if "image_uri" in item:
-        fact['Image_URI'] = u'<img src="%s" alt="[No Image]" />' % item["image_uri"]
+    fact['iKnowID'] = item.uniqIdStr()
+    fact['Expression'] = item.expression
+    fact['Meaning'] = item.meaning
+    fact['iKnowType'] = item.type
+    fact['Reading'] = item.reading
+    if item.image_uri:
+        fact['Image_URI'] = u'<img src="%s" alt="[No Image]" />' % item.image_uri
     else:
         fact['Image_URI'] = u""
-    if importSettings.downloadAudio and "audio_uri" in item:
+    if importSettings.downloadAudio and item.audio_uri:
         tries = 0
         gotAudioForItem = False
         while not gotAudioForItem and tries < 3:
             tries += 1
             try:
-                (filePath, headers) = urllib.urlretrieve(item["audio_uri"])
+                (filePath, headers) = urllib.urlretrieve(item.audio_uri)
                 path = mw.deck.addMedia(filePath)
                 fact['Audio'] = u"[sound:%s]" % path
                 gotAudioForItem = True
             except:
                 pass
         if not gotAudioForItem:
-            raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item["audio_uri"]
+            raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item.audio_uri
     else:
-        item["audio_uri"] = u""
+        fact['Audio'] = u""
     mw.deck.addFact(fact)
     mw.deck.save()
     return True
@@ -429,9 +427,9 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
 def runImport(modelManager, importSettings):
     try:
         progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
-        iknow = SmartFMCache(None, None, ":memory:")
-        iknow.setCallback(progress.downloadCallback)
-        items = iknow.listItems(importSettings.listId, importSettings.importSentences)
+        iknow = SmartFMAPI()
+        #TODO: iknow.setCallback(progress.downloadCallback)
+        items = iknow.listItems(importSettings.listId, importSettings.importVocab, importSettings.importSentences)
         progress.preImportResetProgress(len(items))
         totalImported = 0
         totalDup = 0
@@ -439,15 +437,15 @@ def runImport(modelManager, importSettings):
         for i, item in enumerate(items):
             if importSettings.maxItems > 0 and totalImported >= importSettings.maxItems:
                 break
-            if not importSettings.importSentences and item["type"] == "sentence":
+            if not importSettings.importSentences and item.type == "sentence":
                 continue
-            if not importSettings.importVocab and item["type"] == "item":
+            if not importSettings.importVocab and item.type == "item":
                 continue
             formatIknowItemPreImport(item, importSettings)
-            progress.importCallback(i, item["expression"])
+            progress.importCallback(i, item.expression)
             if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
                 totalImported += 1
-                totalImportedByType[item["type"]] = totalImportedByType[item["type"]] + 1
+                totalImportedByType[item.type] = totalImportedByType[item.type] + 1
             else:
                 totalDup += 1
         progress.dialog.cancel()
