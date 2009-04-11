@@ -33,9 +33,6 @@ else:
 class SmartFMDownloadError(Exception):
     pass
 
-class SmartFMListItemsMustFetchSomethingError(Exception):
-    pass
-
 class SmartFMNoListDataFound(Exception):
     pass
 
@@ -142,6 +139,12 @@ class SmartFMVocab(SmartFMItem):
                 self.reading = q1d(node, u'text')
         elif q1(node, u'text'):
             self.expression = q1d(node, u'text')
+        hansNode = qwa(node, u'transliteration', u'type', u'Hans')
+        if hansNode:
+            if not self.expression:
+                self.expression = qnodetext(hansNode)
+            elif qnodetext(hansNode) != self.expression:
+                self.expression = self.expression + u"<br />" + qnodetext(hansNode)
         if not self.reading:
             readingNode = qwa(node, u'transliteration', u'type', u'Latn')
             if readingNode:
@@ -172,7 +175,7 @@ class SmartFMSentence(SmartFMItem):
         self.core_words = list()
     
     def linkToVocab(self, vocab):
-        newMeaning = u"<br />" + vocab.expression + u" -- " + vocab.meaning
+        newMeaning = vocab.expression + u" -- " + vocab.meaning
         self.secondary_meanings.append(newMeaning)
         self.core_words.append(vocab.expression)
     
@@ -181,6 +184,12 @@ class SmartFMSentence(SmartFMItem):
         self.language = node.getAttribute(u'language')
         self.item_uri = node.getAttribute(u'href')
         self.expression = q1d(node, u'text')
+        hansNode = qwa(node, u'transliteration', u'type', u'Hans')
+        if hansNode:
+            if not self.expression:
+                self.expression = qnodetext(hansNode)
+            elif qnodetext(hansNode) != self.expression:
+                self.expression = self.expression + u"<br />" + qnodetext(hansNode)
         readingNode = qwa(node, u'transliteration', u'type', u'Hrkt')
         if readingNode:
             self.reading = qnodetext(readingNode)
@@ -248,7 +257,7 @@ class SmartFMAPI(object):
     SmartFM_API_URL = "http://api.smart.fm"
     
     def __init__(self, logFile=None):
-        self.debug = True
+        self.debug = False
         self.callback = None
         if self.debug and logFile:
             self.log = open(logFile, 'a')
@@ -340,13 +349,16 @@ class SmartFMAPI(object):
         return totalResults
     
     def list(self, listId):
-        self._logMsg("list(%s)" % listId)
-        url = SmartFMAPI.SmartFM_API_URL + "/lists/%s.xml" % listId
-        results = self._allPagesUntilEmpty(url, moreThanOnePage=True)
-        if len(results.lists.values()) > 0:
-            return results.lists.values()[0]
-        else:
-            raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm list %s" % listId
+        try:
+            self._logMsg("list(%s)" % listId)
+            url = SmartFMAPI.SmartFM_API_URL + "/lists/%s.xml" % listId
+            results = self._allPagesUntilEmpty(url, moreThanOnePage=True)
+            if len(results.lists.values()) > 0:
+                return results.lists.values()[0]
+            else:
+                raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm list %s" % listId
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
             
         
     
@@ -359,20 +371,26 @@ class SmartFMAPI(object):
         elif includeSentences:
             return self.listSentences(smartfmlist)
         else:
-            raise SmartFMListItemsMustFetchSomethingError, "listItems() called but no item type (vocab, sentence, both) specified"
+            raise SmartFMDownloadError, "listItems() called but no item type (vocab, sentence, both) specified"
         
     def listVocab(self, smartfmlist):
-        self._logMsg("listVocab(%s)" % smartfmlist.iknow_id)
-        itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
-        itemsParamsBase = {"include_sentences" : "false"}
-        results = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsParamsBase, includeSentences=False)
-        return results.sortItems(True, False)
+        try:
+            self._logMsg("listVocab(%s)" % smartfmlist.iknow_id)
+            itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
+            itemsParamsBase = {"include_sentences" : "false"}
+            results = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsParamsBase, includeSentences=False)
+            return results.sortItems(True, False)
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def listSentences(self, smartfmlist):
-        if smartfmlist.language == smartfmlist.translation_language:
-            return self.listItemsAllGeneric(smartfmlist).sortItems(False, True)
-        else:
-            return self.listSentencesBilingual(smartfmlist)
+        try:
+            if smartfmlist.language == smartfmlist.translation_language:
+                return self.listItemsAllGeneric(smartfmlist).sortItems(False, True)
+            else:
+                return self.listSentencesBilingual(smartfmlist)
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def listSentencesBilingual(self, smartfmlist):
         self._logMsg("listSentences(%s)" % smartfmlist.iknow_id)
@@ -381,7 +399,10 @@ class SmartFMAPI(object):
         return results.sortItems(False, True)
             
     def listItemsAll(self, smartfmlist):
-        return self.listItemsAllGeneric(smartfmlist).sortItems(True, True)
+        try:
+            return self.listItemsAllGeneric(smartfmlist).sortItems(True, True)
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def listItemsAllGeneric(self, smartfmlist):
         self._logMsg("listItemsAll(%s)" % smartfmlist.iknow_id)

@@ -20,47 +20,53 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         self.showVocab = showVocab
         self.setObjectName("smartfmCardCustomizeDialog")
         self.setWindowTitle("Smart.fm - Customize Card Types")
-        self.resize(450, 300)
+        self.resize(450, 250)
         
         self.mainLayout = QtGui.QVBoxLayout(self)
-        self.mainLayout.setSpacing(6)
-        self.mainLayout.setMargin(9)
+        #self.mainLayout.setSpacing(6)
+        #self.mainLayout.setMargin(9)
         self.mainLayout.setObjectName("mainLayout")
         
         if self.showVocab:
-            self.labelVocab = QtGui.QLabel("Vocabulary Model - Card Types")
-            self.labelVocab.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
+            self.labelVocab = QtGui.QLabel("<b>Vocabulary Model - Card Types</b>")
+            #self.labelVocab.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignBottom)
             self.labelVocab.setWordWrap(True)
             self.mainLayout.addWidget(self.labelVocab)
         
-            self.checkProduction = QtGui.QCheckBox("Production card (from your native language to a new language)")
+            self.checkProduction = QtGui.QCheckBox("Production card")
             self.checkProduction.setChecked(self.cardSettings.vocabProduction)
+            self.checkProduction.setToolTip("Given a hint in your language, remember the correct word in your study language.")
             self.mainLayout.addWidget(self.checkProduction)
         
-            self.checkListening = QtGui.QCheckBox("Listening card (hear the word and remember its meaning)")
+            self.checkListening = QtGui.QCheckBox("Listening card (enables audio download)")
             self.checkListening.setChecked(self.cardSettings.vocabListening)
+            self.checkListening.setToolTip("Listen to the audio and remember its meaning.")
             self.mainLayout.addWidget(self.checkListening)
         
-            self.checkReading = QtGui.QCheckBox("Reading card (read the word and remember its meaning)")
+            self.checkReading = QtGui.QCheckBox("Reading card")
             self.checkReading.setChecked(self.cardSettings.vocabReading)
+            self.checkReading.setToolTip("Read the text and remember its meaning.")
             self.mainLayout.addWidget(self.checkReading)
         
         if self.showSentence:
-            self.labelSentences = QtGui.QLabel("Sentences Model - Card Types")
-            self.labelSentences.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
+            self.labelSentences = QtGui.QLabel("<b>Sentences Model - Card Types</b>")
+            #self.labelSentences.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignBottom)
             self.labelSentences.setWordWrap(True)
             self.mainLayout.addWidget(self.labelSentences)
         
-            self.checkProductionSentences = QtGui.QCheckBox("Production card (from your native language to a new language)")
+            self.checkProductionSentences = QtGui.QCheckBox("Production card")
             self.checkProductionSentences.setChecked(self.cardSettings.sentenceProduction)
+            self.checkProductionSentences.setToolTip("Given a hint in your language, remember the correct sentence in your study language.")
             self.mainLayout.addWidget(self.checkProductionSentences)
         
-            self.checkListeningSentences = QtGui.QCheckBox("Listening card (hear the word and remember its meaning)")
+            self.checkListeningSentences = QtGui.QCheckBox("Listening card (enables audio download)")
             self.checkListeningSentences.setChecked(self.cardSettings.sentenceListening)
+            self.checkListeningSentences.setToolTip("Listen to the audio and remember its meaning.")
             self.mainLayout.addWidget(self.checkListeningSentences)
         
-            self.checkReadingSentences = QtGui.QCheckBox("Reading card (read the word and remember its meaning)")
+            self.checkReadingSentences = QtGui.QCheckBox("Reading card")
             self.checkReadingSentences.setChecked(self.cardSettings.sentenceReading)
+            self.checkReadingSentences.setToolTip("Read the text and remember its meaning.")
             self.mainLayout.addWidget(self.checkReadingSentences)
         
         self.btnSubmit = QtGui.QPushButton(self)
@@ -138,9 +144,9 @@ class IknowImportDialog(QtGui.QDialog):
         self.check_includeItemMeaning.setChecked(self.importSettings.includeItemMeaning)
         self.settingsLayout.addWidget(self.check_includeItemMeaning)
         
-        self.check_boldKeywordMonolingual = QtGui.QCheckBox("Bold sentence keywords for monolingual lists")
-        self.check_boldKeywordMonolingual.setChecked(self.importSettings.boldMonolingualKeywords)
-        self.settingsLayout.addWidget(self.check_boldKeywordMonolingual)
+        #self.check_boldKeywordMonolingual = QtGui.QCheckBox("Bold sentence keywords for monolingual lists")
+        #self.check_boldKeywordMonolingual.setChecked(self.importSettings.boldMonolingualKeywords)
+        #self.settingsLayout.addWidget(self.check_boldKeywordMonolingual)
         
         self.check_boldKeywordBilingual = QtGui.QCheckBox("Bold sentence keywords for bilingual lists")
         self.check_boldKeywordBilingual.setChecked(self.importSettings.boldBilingualKeywords)
@@ -203,7 +209,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.importSettings.downloadAudio = self.check_AudioDownload.isChecked()
         self.importSettings.includeItemMeaning = self.check_includeItemMeaning.isChecked()
         self.importSettings.boldBilingualKeywords = self.check_boldKeywordBilingual.isChecked()
-        self.importSettings.boldMonolingualKeywords = self.check_boldKeywordMonolingual.isChecked()
+        #self.importSettings.boldMonolingualKeywords = self.check_boldKeywordMonolingual.isChecked()
         
         if len(errors) > 0:
             self.showErrors(errors)
@@ -235,6 +241,38 @@ class SmartFMImportSettings:
         self.includeItemMeaning = True
         self.boldBilingualKeywords = False
         self.boldMonolingualKeywords = True
+        self.loadFromConfig()
+    
+    def loadFromConfig(self):
+        if "iknow.downloadAudio" in mw.config:
+            if mw.config["iknow.downloadAudio"] == "True":
+                self.downloadAudio = True
+            elif mw.config["iknow.downloadAudio"] == "False":
+                self.downloadAudio = False
+        if "iknow.includeItemMeaning" in mw.config:
+            if mw.config["iknow.includeItemMeaning"] == "True":
+                self.includeItemMeaning = True
+            elif mw.config["iknow.includeItemMeaning"] == "False":
+                self.includeItemMeaning = False
+        if "iknow.boldBilingualKeywords" in mw.config:
+            if mw.config["iknow.boldBilingualKeywords"] == "True":
+                self.boldBilingualKeywords = True
+            elif mw.config["iknow.boldBilingualKeywords"] == "False":
+                self.boldBilingualKeywords = False
+    
+    def saveToConfig(self):
+        if self.downloadAudio:
+            mw.config["iknow.downloadAudio"] = "True"
+        else:
+            mw.config["iknow.downloadAudio"] = "False"
+        if self.includeItemMeaning:
+            mw.config["iknow.includeItemMeaning"] = "True"
+        else:
+            mw.config["iknow.includeItemMeaning"] = "False"
+        if self.boldBilingualKeywords:
+            mw.config["iknow.boldBilingualKeywords"] = "True"
+        else:
+            mw.config["iknow.boldBilingualKeywords"] = "False"
 
 
 class SmartFMModelManager:
@@ -329,7 +367,7 @@ class ProgressTracker:
     def downloadCallback(self, url, pageNumber, itemCount):
         self.currentPercent += 1
         self.logMsg("url:%s\npage#:%s\nitems:%s\n\n" % (url, pageNumber, itemCount))
-        self.dialog.setLabelText("Downloading page %s, got %s items so far." % (pageNumber, itemCount))
+        self.dialog.setLabelText("Downloading data from smart.fm, got %s items so far." % itemCount)
         self.dialog.setValue(self.currentPercent)
         mw.app.processEvents()
         
@@ -428,10 +466,11 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
 
 def runImport(modelManager, importSettings):
     try:
+        importSettings.saveToConfig()
         progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
         iknow = SmartFMAPI()
-        #TODO: iknow.setCallback(progress.downloadCallback)
-        items = iknow.listItems(importSettings.listId, importSettings.importVocab, importSettings.importSentences)
+        iknow.setCallback(progress.downloadCallback)
+        items = iknow.listItems(importSettings.listId, (importSettings.importVocab or importSettings.includeItemMeaning), importSettings.importSentences)
         progress.preImportResetProgress(len(items))
         totalImported = 0
         totalDup = 0
@@ -453,25 +492,25 @@ def runImport(modelManager, importSettings):
         progress.dialog.cancel()
         progress.close()
         mw.deck.save()
-        mw.reset(mw.mainWin)
         QMessageBox.information(mw,"Summary","Import complete. Imported %s items, %s sentences, and skipped %s duplicates." % (totalImportedByType["item"], totalImportedByType["sentence"], totalDup))
+        mw.reset(mw.mainWin)
     except AudioDownloadError:
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers. Please try your import again.")
+        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers, or a slower internet connection. Please try your import again.")
         mw.reset(mw.mainWin)
     except SmartFMDownloadError:
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm\n\nIf you are able to access smart.fm, please send the file 'iknow-smartfm-log.txt' (in the Anki plugins folder) to the plugin developer. See the IKNOW_IMPORT_README file for contact details.")
+        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm<br /><br />If you are able to access smart.fm, please send the file 'iknow-smartfm-log.txt' (in the Anki plugins folder) to the plugin developer. See the IKNOW_IMPORT_README file for contact details.")
         mw.reset(mw.mainWin)
     except:
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer (see the IKNOW_IMPORT_READEM.txt file in your plugin folder for contact info).")
+        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer (see the IKNOW_IMPORT_README.txt file in your plugin folder for contact info).")
         mw.reset(mw.mainWin)
 
 
@@ -480,24 +519,29 @@ def runDialog():
     importSettings = SmartFMImportSettings()
     dialog = IknowImportDialog(importSettings)
     if dialog.exec_():
-        QMessageBox.information(mw, "Information", "Got some import settings '%s' type '%s'" % (importSettings.listId, str(type(importSettings.listId))))
+        #DEBUG: QMessageBox.information(mw, "Information", "Got some import settings '%s' type '%s'" % (importSettings.listId, str(type(importSettings.listId))))
         if not importSettings.importSentences and not importSettings.importVocab:
             return
         cardSettings = SmartFMCardTypeSettings()
         modelManager = SmartFMModelManager(importSettings)
         if modelManager.isNeedsVocabModel() or modelManager.isNeedsSentenceModel():
-            cardEditDialog = SmartFMModelCustomizeDialog(cardSettings, modelManager.isNeedsVocabModel, modelManager.isNeedsSentenceModel)
+            cardEditDialog = SmartFMModelCustomizeDialog(cardSettings, modelManager.isNeedsVocabModel(), modelManager.isNeedsSentenceModel())
             if cardEditDialog.exec_():
                 modelManager.createModelsFromSettings(cardSettings)
-                QMessageBox.information(mw, "Information", "Created required models, importing...")
+                #DEBUG: QMessageBox.information(mw, "Information", "Created required models, importing...")
+                #automatically enable audio download if the user selects listening cards
+                if cardSettings.vocabListening or cardSettings.sentenceListening:
+                    importSettings.downloadAudio = True
                 runImport(modelManager, importSettings)
             else:
-                QMessageBox.information(mw, "Information", "Cancelled on card types dialog")
+                pass
+                #DEBUG: QMessageBox.information(mw, "Information", "Cancelled on card types dialog")
         else:
-            QMessageBox.information(mw, "Information", "All required models already exist, importing...")
+            #DEBUG: QMessageBox.information(mw, "Information", "All required models already exist, importing...")
             runImport(modelManager, importSettings)
     else:
-        QMessageBox.warning(mw, "Warning", "Cancelled on import settings dialog")
+        pass
+        #DEBUG: QMessageBox.warning(mw, "Warning", "Cancelled on import settings dialog")
 
 
 dialogStart = QAction(mw)

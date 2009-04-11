@@ -79,6 +79,15 @@ class SentencesOnly(unittest.TestCase):
         self.failUnlessEqual(u"247815", sentences[29].iknow_id)
     
 class VocabAndSentences(unittest.TestCase):
+    def testChineseMediaAll(self):
+        api = SmartFMAPI("debug.txt")
+        items = api.listItems(35430, True, False)
+        self.assert_(items[3].expression.find(u"市場") >= 0, "Should have simple/traditional characters")
+        self.assert_(items[3].expression.find(u"市场") >= 0, "Should also have Hansig characters")
+        items = api.listItems(35430, False, True)
+        self.assert_(items[0].expression.find(u"龍是中") >= 0, "Should have simple/traditional characters")
+        self.assert_(items[0].expression.find(u"龙是中") >= 0, "Should also have Hansig characters")
+    
     def testJapaneseToEnglishAll(self):
         api = SmartFMAPI("debug.txt")
         items = api.listItems(19056, True, True)
@@ -103,6 +112,15 @@ class VocabAndSentences(unittest.TestCase):
         vocab = api.listItems(19056, True, False)
         curWordIndex = 0
         curWord = None
+        #loop through the items and ensure that:
+        #   a) vocabulary appears in the same order as on the list itself on smart.fm
+        #   b) sentences appear only after the primary vocab word of the sentence itself (multiple such sentences can appear but only consecutively)
+        # eg:
+        #   vocab 1
+        #   sentence for vocab 1
+        #   vocab 2
+        #   sentence for vocab 2
+        #   sentence 2 for vocab 2
         for i, item in enumerate(items):
             if not curWord:
                 self.assertEqual(u"item", item.type)
