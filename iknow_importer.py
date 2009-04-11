@@ -140,7 +140,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.check_AudioDownload.setChecked(self.importSettings.downloadAudio)
         self.settingsLayout.addWidget(self.check_AudioDownload)
         
-        self.check_includeItemMeaning = QtGui.QCheckBox("Include keyword meanings with sentences")
+        self.check_includeItemMeaning = QtGui.QCheckBox("Include keyword meanings in sentence meanings")
         self.check_includeItemMeaning.setChecked(self.importSettings.includeItemMeaning)
         self.settingsLayout.addWidget(self.check_includeItemMeaning)
         
@@ -545,6 +545,6 @@ def runDialog():
 
 
 dialogStart = QAction(mw)
-dialogStart.setText("iKnow! - Learning Import")
+dialogStart.setText("Smart.fm Importer")
 mw.connect(dialogStart, SIGNAL("triggered()"), runDialog)
 mw.mainWin.menuTools.addAction(dialogStart)

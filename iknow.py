@@ -3,7 +3,7 @@ import os, urllib, urllib2, re, operator
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
 #TODO
-CACHE_API_RESULTS_PATH = os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
+CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
 
 #API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
 if CACHE_API_RESULTS_PATH:
