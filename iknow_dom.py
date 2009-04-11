@@ -169,10 +169,12 @@ class SmartFMSentence(SmartFMItem):
     def __init__(self):
         SmartFMItem.__init__(self)
         self.type = u"sentence"
+        self.core_words = list()
     
     def linkToVocab(self, vocab):
         newMeaning = u"<br />" + vocab.expression + u" -- " + vocab.meaning
         self.secondary_meanings.append(newMeaning)
+        self.core_words.append(vocab.expression)
     
     def loadFromDOM(self, node, translationLanguage):
         self.iknow_id = node.getAttribute(u'id')
@@ -193,6 +195,21 @@ class SmartFMSentence(SmartFMItem):
             self.audio_uri = q1d(node, u'sound')
         if q1(node, u'image'):
             self.image_uri = q1d(node, u'image')
+
+class SmartFMItemSorter:
+    def __init__(self):
+        pass
+
+    def __call__(self, x, y):
+        if x.index == y.index:
+            if x.type == "item" and y.type == "sentence":
+                return -1
+            elif x.type == "sentence" and y.type == "item":
+                return 1
+            else:
+                return 0
+        else:
+            return cmp(x.index, y.index)
 
 class SmartFMAPIResultSet(object):
     def __init__(self, startIndex=0):
@@ -218,28 +235,13 @@ class SmartFMAPIResultSet(object):
     
     def sortItems(self, yesVocab, yesSentences):
         for key in self.items.keys():
-            if self.items[key].type == "vocab" and not yesVocab:
+            if self.items[key].type == "item" and not yesVocab:
                 del self.items[key]
             elif self.items[key].type == "sentence" and not yesSentences:
                 del self.items[key]
         values = self.items.values()
-        values.sort(key=operator.attrgetter('index'))
+        values.sort(SmartFMItemSorter())
         return values
-    
-    def mergeWithResults(self, resultSet):
-        hasAtLeastOneUpdate = False
-        if len(resultSet.lists) > 0:
-            if len(set(resultSet.lists.keys()).difference(set(self.lists.keys()))) > 0:
-                self.lists.update(resultSet.lists)
-                hasAtLeastOneUpdate = True
-        if len(resultSet.items) > 0:
-            if len(set(resultSet.items.keys()).difference(set(self.items.keys()))) > 0:
-                self.items.update(resultSet.items)
-                hasAtLeastOneUpdate = True
-        if hasAtLeastOneUpdate:
-            return True
-        else:
-            return False
 
 class SmartFMAPI(object):
     SmartFM_STD_URL = "http://smart.fm"
@@ -247,11 +249,15 @@ class SmartFMAPI(object):
     
     def __init__(self, logFile=None):
         self.debug = True
+        self.callback = None
         if self.debug and logFile:
             self.log = open(logFile, 'a')
             self.log.write("\n\n----------------------START----------------------\n")
         else:
             self.log = None
+    
+    def setCallback(self, callback):
+        self.callback = callback
     
     def _logMsg(self, msg):
         if self.debug and self.log:
@@ -293,8 +299,8 @@ class SmartFMAPI(object):
                     events.expandNode(node)
                     smartfmsentence = SmartFMSentence()
                     smartfmsentence.loadFromDOM(node, translationLanguage)
-                    pageResults.addItem(smartfmsentence)
-                    changedItemCount += 1
+                    if pageResults.addItem(smartfmsentence):
+                        changedItemCount += 1
         return changedItemCount
     
     def _allPagesUntilEmpty(self, baseUrl, baseParams={}, translationLanguage=None, moreThanOnePage=True, includeSentences=False, startResultSet=None):
@@ -319,10 +325,12 @@ class SmartFMAPI(object):
                 if i != 0: currentUrl += u"&"
                 currentUrl += "%s=%s" % (key, currentParams[key])
             self._logMsg("fetching url %s" % currentUrl)
+            if self.callback:
+                self.callback(currentUrl, page, len(totalResults.items) + len(totalResults.lists))
             xml = getUrlOrCache(currentUrl)
             newItemsOnPageCount = self._parsePage(xml, totalResults, translationLanguage, includeSentences)
             if newItemsOnPageCount > 0:
-                self._logMsg("at least one new list/item retrieved")
+                self._logMsg("at least one new list/item retrieved: %s" % newItemsOnPageCount)
             else:
                 self._logMsg("no new lists/items retrieved, breaking loop")
                 areMoreItems = False
@@ -361,13 +369,21 @@ class SmartFMAPI(object):
         return results.sortItems(True, False)
     
     def listSentences(self, smartfmlist):
+        if smartfmlist.language == smartfmlist.translation_language:
+            return self.listItemsAllGeneric(smartfmlist).sortItems(False, True)
+        else:
+            return self.listSentencesBilingual(smartfmlist)
+    
+    def listSentencesBilingual(self, smartfmlist):
         self._logMsg("listSentences(%s)" % smartfmlist.iknow_id)
         baseUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
         results = self._allPagesUntilEmpty(baseUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True)
         return results.sortItems(False, True)
             
-    
     def listItemsAll(self, smartfmlist):
+        return self.listItemsAllGeneric(smartfmlist).sortItems(True, True)
+    
+    def listItemsAllGeneric(self, smartfmlist):
         self._logMsg("listItemsAll(%s)" % smartfmlist.iknow_id)
         itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
         itemsBaseParams = {"include_sentences" : "true"} #we want the data for the sentences so that we can tie vocab words to the sentences
@@ -378,4 +394,4 @@ class SmartFMAPI(object):
             if allResults.items[key].type == "sentence":
                 if key not in sentenceResults.items:
                     del allResults.items[key]
-        return allResults.sortItems(True, True)
+        return allResults

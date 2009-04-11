@@ -20,7 +20,7 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         self.showVocab = showVocab
         self.setObjectName("smartfmCardCustomizeDialog")
         self.setWindowTitle("Smart.fm - Customize Card Types")
-        self.resize(450, 600)
+        self.resize(450, 300)
         
         self.mainLayout = QtGui.QVBoxLayout(self)
         self.mainLayout.setSpacing(6)
@@ -361,19 +361,21 @@ def formatIknowItemPreImport(item, importSettings):
         
     #for sentences in a monolingual list, use the item meaning 
     if not item.meaning and len(item.secondary_meanings) > 0:
-        item['meaning'] = item['item_meaning']
+        item.meaning = u""
+        for secondary in item.secondary_meanings:
+            item.meaning = item.meaning + u"<br />" + secondary
     elif importSettings.includeItemMeaning and len(item.secondary_meanings) > 0:
         #note this only applies when the sentence already has its own meaning and we are possibly adding to it
         for secondary in item.secondary_meanings:
             item.meaning = item.meaning + u"<br />" + secondary
     
-    #TODO: get working with the new iknow_dom    
     ###if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
-    #if hasOwnMeaning and not importSettings.boldBilingualKeywords:
-    #    for key in mainKeys:
-    #        item[key] = item[key].replace('<b>','').replace('</b>','')
+    if hasOwnMeaning and not importSettings.boldBilingualKeywords:
+        item.meaning = item.meaning.replace('<b>','').replace('</b>','')
+        item.reading = item.reading.replace('<b>','').replace('</b>','')
+        item.expression = item.expression.replace('<b>','').replace('</b>','')
     ###if monolingual list, and we DO want bolding on monolingual lists, then bold the primary word if it isn't already bolded        
-    #if not hasOwnMeaning and importSettings.boldMonolingualKeywords and 'core_word' in item:
+    #if not hasOwnMeaning and importSettings.boldMonolingualKeywords and item.type == "sentence" and len(item.core_words) > 0:
     #    for key in mainKeys:
     #        if item[key].find('<b>') >= 0:
     #            continue
