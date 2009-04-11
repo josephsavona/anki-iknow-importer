@@ -15,12 +15,12 @@ Features
           o Import only the items you’ve actually studied (“My Items”)
           o Or import an entire smart.fm! list
     * Downloads audio samples for each item locally so you can still study offline.
-    * Images are referenced so you can see them when you have online acces (per smart.fm!’s terms of use)
-    * Customize your card templates before importing to get only the cards you want. You can set up only one card per vocab/sentence, or many. By default there are 3 card templates per item:
-          o Reading (question is the expression in Kanji)
+    * Images are referenced so you can see them when you have online access (per smart.fm!’s terms of use)
+    * Customize your card templates before importing to get only the cards you want. You can set up only one card per vocab/sentence, or many. When you first start importing into a deck, you can choose from the following card types (select/deselect as desired):
+          o Reading (question is the expression (in Kanji where applicable))
           o Listening (question is audio only)
           o Production (question is the meaning of the item, you have to produce the expression)
-    * Imports phonetic reading information for languages such as Chinese (pinyin) or Japanese (hiragana/katakana). Currently you cannot select romaji readings for Japanese lists. If you’re studying Japanese, you really, really should learn Hiragana straight away.
+    * Imports phonetic reading information for languages such as Chinese (pinyin) or Japanese (hiragana/katakana). Currently you cannot select romaji readings for Japanese lists. If you’re studying Japanese, you really, really should learn Hiragana straight away. For those studying Chinese, note that two written forms are included for the 'expression' (I believe these are simple and traditional). 
 
 Download and Installation
 
@@ -30,33 +30,23 @@ Download and Installation
           * To find the plugins directory, open Anki, and choose the menu item Settings->Plugins->Open Plugins Folder
    3. Extract the contents of the zip file. You should have “smart.fm.py” and “smart.fm_importer.py” in the plugins folder now (eg …/Anki/plugins/smart.fm.py)
    4. Restart or open Anki
-   5. From the Tools menu, choose the appropriate ‘smart.fm! – ....’ option for what you want to import. See usage below.
+   5. From the Tools menu, choose 'Smart.fm Importer'
 
 Usage
 
-   1. Before importing anything from smart.fm!, choose ‘smart.fm – Customize Models’ from the Tools menu.
-   2. You’ll get a message that models have been created, and that you can go edit them now if you like. By default, there are 2 models which have the same card arrangement:
-          * Vocab Model:
-                o production (given the word in your native language, you have to remember the target language word)
-                o reading (given the written word in the target language, remember its meaning)
-                o listening (listen to the audio of the word, and try to understand it and remember its
-          * Sentence Model (cards are the same as for
-                o production
-                o reading
-                o listening
-          * You should not delete either of these models. You should also not rename them. If you do, the plugin will just create them again. However, you can edit the card types. For example, the plugin author himself edits the card types in his deck to look like this:
-          * Vocab Model:
-                o reading
-          * Sentence Model:
-                o reading/listening (editing the reading card to also add the audio into the question)
-                o production
-   3. After you’ve edited the cards to your satisfaction, you’re ready to import some things from smart.fm. Your choices are:
-          * User Vocab and Sentences – imports all the items you’ve studied along with smart.fm’s “default” sentences for these items. The sentences may not be ones you’ve studied before. Honestly, it’s a bug in smart.fm’s API. You are asked for the language code of the language you want to study (so that you can limit items/sentences to just one language per smart.fm deck).
-          * User Sentences – imports just the sentences for the items you’ve studied. Again, it uses the buggy smart.fm API so you may not have seen all the sentences before.
-          * List Vocab and Sentences – this imports only vocab and sentences from the list you enter. This does a full check of the list and ensures sentences are only those that appear in the list (again, working around smart.fm’s buggy API)
-          * List Sentences – same as previous but sentences only.
-   4. Go ahead and import something! The only thing that’s not supported right now is studying your own language. So english speakers studying english vocab are, unfortunately, out of luck for the moment.
+   1. Select ‘Smart.fm Importer’ from the Tools menu.
+   2. Choose what list to enter, and what items from that list:
+     * Enter the list URL at the top
+     * Choose vocab only, sentences only, or both vocab and sentences
+     * Optionally enter a maximum number of items to import (if left blank all list items are imported)
+     * If you don't want any listening practice, you can deselect 'download audio clips'
+     * If you want to reinforce the keyword of each sentence, the 'include keyword meanings in sentence meanings' will add 'keyword -- meaning' to the end of a sentence's meaning.
+     * If you want the keyword of a sentence to be bolded, choose 'bold sentence keywords'. This applies to bilingual lists. Monolingual lists (studying Japanese in Japanese) will automatically have keywords bolded. Deselecting this option ensures that keywords are *not* bolded
+  3. Click 'Start Import'
+  4. If this is your first import into a deck, you will see a new screen. Choose what card types to use for studying sentences, and for vocab. You can have different card types for vocab than you do for sentences. For example, vocab listening can be difficult with languages that have many homophones (eg Japanese) but you probably want listening practice for sentences.
+  5. Finally, just wait as the data is downloaded from smart.fm. It'll take a little while, but then you'll be all set to study!
 
+   
 F.A.Q.
 
 Q) I found a bug. What do I do?
@@ -68,38 +58,11 @@ Q) Where does the reading come from?
 A) For Japanese lists, it comes from smart.fm!’s own hiragana/katakana phonetic reading. For all other languages, it comes from the latin/romanized reading. Eg pinyin for chinese. Currently there is no option to get romaji readings for Japanese. Learn Hiragana!
 
 Q) I don’t need audio. Can I skip downloading it?
-A) Yes. But because I’m assuming 99% of people will want smart.fm’s awesome audio clips, you have to edit the plugin to disable audio download. Do this: In the Anki plugins directory, change line 14 of ‘iknow_importer.py’ from:
-
-IMPORT_AUDIO = True
-
-to
-
-IMPORT_AUDIO = False
-
-Note the capitalization of ‘False’. The first letter must be capitalized.
-
-Q) How can I highlight (or not highlight) the word for which the sentence is an example?
-
-A) Let’s say that the sentence is “作業するにはもっと広いスペースが必要だ。” and it’s an example for ‘作業’. You have several options for how to display this relationship of sentence/word on the card:
-* Make the card’s “meaning” be a combination of the sentence meaning and the meaning for the word. So in the above example, the card meaning would be “I need a bigger space to work. <> 作業—work, operation”. To enable (it’s already enabled by default), edit iknow_importer.py in your plugins directory and make sure line 17 reads:
-
-ENABLE_PRIMARY_WORD_MEANING_IN_SENTENCE_MEANING = True
-
-* Bold the primary word wherever it appears – the front of the card and the back (expression and meaning). To enable (it’s disabled by default), edit iknow_importer.py in your plugins directory and make sure line 20 reads:
-
-ENABLE_PRIMARY_WORD_BOLDING_FOR_BILINGUAL_LISTS = True
-
-* Both of the above
-
-To disable either of these, change ‘True’ to ‘False’
-
-Q) I messed up my username or native language. What do I do?
-
-A) Choose ‘smart.fm – Reset Username and Native Language’ from the Tools menu, and reenter your data.
+A) Yes. Just unclick the checkbox on the import screen.
 
 Q) I ran an import but no items were imported. What’s up with that?
 
-A) i) If there were lots of duplicates, then you probably have just imported that list before. ii) If you know for a fact you haven’t imported that list before, it’s probably one of two things. A) A problem with the script of with smart.fm. If that’s the case you should see some kind of error message. or B) You may have entered an incorrect language code. Either for your native language, or the language you want to study. Try the Tools menu option ‘smart.fm – Reset username and native language’
+A) If there were lots of duplicates, then you probably have just imported that list before. 
 
 Q) This plugin is great and makes my life easier. How can I show my appreciation?
 
