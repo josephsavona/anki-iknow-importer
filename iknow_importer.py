@@ -6,7 +6,7 @@ from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 import os, re, time, urllib, traceback
-from iknow_dom import *
+from iknow import *
 
 
 class AudioDownloadError(Exception):
