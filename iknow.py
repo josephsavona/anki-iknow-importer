@@ -225,6 +225,10 @@ class SmartFMAPIResultSet(object):
         self.lists = {}
         self.items = {}
         self.current_index = startIndex
+        
+    def updateIndexToMatch(self, itemToUpdateKey, itemWithTargetIndexKey):
+        if itemWithTargetIndexKey in self.items and itemToUpdateKey in self.items:
+            self.items[itemToUpdateKey].index = self.items[itemWithTargetIndexKey].index
     
     def addList(self, newlist):
         if newlist.uniqIdStr() in self.lists:
@@ -304,6 +308,7 @@ class SmartFMAPI(object):
                                 changedItemCount += 1
                             elif sentence.uniqIdStr() in pageResults.items:
                                 pageResults.items[sentence.uniqIdStr()].linkToVocab(smartfmitem)
+                                pageResults.updateIndexToMatch(sentence.uniqIdStr(), smartfmitem.uniqIdStr())
                 elif includeSentences and node.tagName.lower() == 'sentence':
                     events.expandNode(node)
                     smartfmsentence = SmartFMSentence()
