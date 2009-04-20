@@ -168,7 +168,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.connect(self.cancelButton, QtCore.SIGNAL("clicked()"), self.cancelClicked)
     
     def showErrors(self, errors):
-        QMessageBox.warning(mw, "Warning", "There were various errors:%s" % "<br/>".join(errors))
+        QMessageBox.warning(mw, "Warning", "There were various errors:<br />%s" % "<br />".join(errors))
         pass
     
     def clearErrors(self):
@@ -190,9 +190,10 @@ class IknowImportDialog(QtGui.QDialog):
         
         sourceText = self.txt_source.text()
         if sourceText:
+            sourceText = unicode(sourceText)
             listId = re.search("lists/(\d+)", sourceText)
             if listId:
-                self.importSettings.listId = unicode(listId.group(1))
+                self.importSettings.listId = listId.group(1)
             else:
                 errors.append("URL of the smart.fm list is invalid, please see the example")
         else:
@@ -200,6 +201,7 @@ class IknowImportDialog(QtGui.QDialog):
             
         maxItemsText = self.txt_amountToImport.text()
         if maxItemsText:
+            maxItemsText = unicode(maxItemsText)
             if re.match("^\d+$", maxItemsText) and int(maxItemsText) >= 0:
                 self.importSettings.maxItems = int(maxItemsText)
             else:
@@ -212,6 +214,8 @@ class IknowImportDialog(QtGui.QDialog):
         #self.importSettings.boldMonolingualKeywords = self.check_boldKeywordMonolingual.isChecked()
         
         if len(errors) > 0:
+            for i, error in enumerate(errors):
+                errors[i] = "* %s" % error
             self.showErrors(errors)
             self.btnStartImport.setEnabled(True)
         else:
