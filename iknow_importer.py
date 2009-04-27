@@ -1,5 +1,5 @@
-from PyQt4.QtCore import SIGNAL
-from PyQt4.QtGui import QAction, QMessageBox
+from PyQt4.QtCore import SIGNAL, QUrl
+from PyQt4.QtGui import QAction, QMessageBox, QDesktopServices
 from PyQt4 import QtCore, QtGui
 from ankiqt import mw
 from ankiqt.ui.utils import getOnlyText
@@ -14,12 +14,13 @@ class AudioDownloadError(Exception):
 
 class SmartFMModelCustomizeDialog(QtGui.QDialog):
     def __init__(self, cardSettings, showVocab, showSentence):
-        QtGui.QDialog.__init__(self)
+        QtGui.QDialog.__init__(self, mw)
         self.cardSettings = cardSettings
         self.showSentence = showSentence
         self.showVocab = showVocab
         self.setObjectName("smartfmCardCustomizeDialog")
         self.setWindowTitle("Smart.fm - Customize Card Types")
+        self.setMinimumSize(450, 250)
         self.resize(450, 250)
         
         self.mainLayout = QtGui.QVBoxLayout(self)
@@ -27,13 +28,16 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         #self.mainLayout.setMargin(9)
         self.mainLayout.setObjectName("mainLayout")
         
+        self.labelTop = QtGui.QLabel("<b>Notes:</b><br />* Hover over a card type for more information about it.<br />* You can always edit cards later using the 'card templates' feature of Anki.<br />")
+        self.mainLayout.addWidget(self.labelTop)
+        
         if self.showVocab:
             self.labelVocab = QtGui.QLabel("<b>Vocabulary Model - Card Types</b>")
             #self.labelVocab.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignBottom)
             self.labelVocab.setWordWrap(True)
             self.mainLayout.addWidget(self.labelVocab)
         
-            self.checkProduction = QtGui.QCheckBox("Production card")
+            self.checkProduction = QtGui.QCheckBox("Recall (production) card")
             self.checkProduction.setChecked(self.cardSettings.vocabProduction)
             self.checkProduction.setToolTip("Given a hint in your language, remember the correct word in your study language.")
             self.mainLayout.addWidget(self.checkProduction)
@@ -54,7 +58,7 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
             self.labelSentences.setWordWrap(True)
             self.mainLayout.addWidget(self.labelSentences)
         
-            self.checkProductionSentences = QtGui.QCheckBox("Production card")
+            self.checkProductionSentences = QtGui.QCheckBox("Recall (production) card")
             self.checkProductionSentences.setChecked(self.cardSettings.sentenceProduction)
             self.checkProductionSentences.setToolTip("Given a hint in your language, remember the correct sentence in your study language.")
             self.mainLayout.addWidget(self.checkProductionSentences)
@@ -95,11 +99,12 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
 
 class IknowImportDialog(QtGui.QDialog):
     def __init__(self, importSettings):
-        QtGui.QDialog.__init__(self)
+        QtGui.QDialog.__init__(self, mw)
         self.importSettings = importSettings
         self.setObjectName("Smart.fm Import")
         self.setWindowTitle("Smart.fm Import")
-        self.resize(450, 600)
+        self.setMinimumSize(450, 450)
+        self.resize(450, 450)
     
         self.mainLayout = QtGui.QVBoxLayout(self)
         self.mainLayout.setSpacing(6)
@@ -120,12 +125,17 @@ class IknowImportDialog(QtGui.QDialog):
     
         self.rbtn_group_typesToImport = QtGui.QGroupBox("Item types to import:", self)
         self.rbtnLayout = QtGui.QVBoxLayout(self.rbtn_group_typesToImport)
-        self.rbtn_typesToImportVocab = QtGui.QRadioButton("&Vocabulary", self.rbtn_group_typesToImport)
+        self.rbtn_typesToImportVocab = QtGui.QRadioButton("&Vocabulary/Items", self.rbtn_group_typesToImport)
+        self.rbtn_typesToImportVocab.setChecked(self.importSettings.importVocab and (not self.importSettings.importSentences))
+        
         self.rbtnLayout.addWidget(self.rbtn_typesToImportVocab)
         self.rbtn_typesToImportSent = QtGui.QRadioButton("&Sentences", self.rbtn_group_typesToImport)
+        self.rbtn_typesToImportSent.setChecked((not self.importSettings.importVocab) and  self.importSettings.importSentences)
         self.rbtnLayout.addWidget(self.rbtn_typesToImportSent)
+        
         self.rbtn_typesToImportAll = QtGui.QRadioButton("&Both", self.rbtn_group_typesToImport)
         self.rbtnLayout.addWidget(self.rbtn_typesToImportAll)
+        self.rbtn_typesToImportAll.setChecked(self.importSettings.importVocab and  self.importSettings.importSentences)
         self.settingsLayout.addWidget(self.rbtn_group_typesToImport)
         
         self.labelAmount = QtGui.QLabel("Maximum number of items to import (leave blank to download all items):")
@@ -161,7 +171,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.settingsLayout.addWidget(self.importStatusLabel)
     
         self.cancelButton = QtGui.QPushButton(self)
-        self.cancelButton.setText(_("Finish"))
+        self.cancelButton.setText(_("Cancel"))
         self.mainLayout.addWidget(self.cancelButton)
         
         self.connect(self.btnStartImport, QtCore.SIGNAL("clicked()"), self.startImportClicked)
@@ -183,8 +193,10 @@ class IknowImportDialog(QtGui.QDialog):
             self.importSettings.importVocab = True
         elif self.rbtn_typesToImportSent.isChecked():
             self.importSettings.importSentences = True
+            self.importSettings.importVocab = False
         elif self.rbtn_typesToImportVocab.isChecked():
             self.importSettings.importVocab = True
+            self.importSettings.importSentences = False
         else:
             errors.append("Please choose a type of item to import")
         
@@ -239,8 +251,8 @@ class SmartFMImportSettings:
     def __init__(self):
         self.listId = None
         self.maxItems = 0
-        self.importVocab = False
-        self.importSentences = False
+        self.importVocab = True
+        self.importSentences = True
         self.downloadAudio = True
         self.includeItemMeaning = True
         self.boldBilingualKeywords = False
@@ -248,6 +260,16 @@ class SmartFMImportSettings:
         self.loadFromConfig()
     
     def loadFromConfig(self):
+        if "iknow.importVocab" in mw.config:
+            if mw.config["iknow.importVocab"] == "True":
+                self.importVocab = True
+            elif mw.config["iknow.importVocab"] == "False":
+                self.importVocab = False
+        if "iknow.importSentences" in mw.config:
+            if mw.config["iknow.importSentences"] == "True":
+                self.importSentences = True
+            elif mw.config["iknow.importSentences"] == "False":
+                self.importSentences = False
         if "iknow.downloadAudio" in mw.config:
             if mw.config["iknow.downloadAudio"] == "True":
                 self.downloadAudio = True
@@ -265,6 +287,14 @@ class SmartFMImportSettings:
                 self.boldBilingualKeywords = False
     
     def saveToConfig(self):
+        if self.importVocab:
+            mw.config["iknow.importVocab"] = "True"
+        else:
+            mw.config["iknow.importVocab"] = "False"
+        if self.importSentences:
+            mw.config["iknow.importSentences"] = "True"
+        else:
+            mw.config["iknow.importSentences"] = "False"
         if self.downloadAudio:
             mw.config["iknow.downloadAudio"] = "True"
         else:
@@ -371,7 +401,7 @@ class ProgressTracker:
     def downloadCallback(self, url, pageNumber, itemCount):
         self.currentPercent += 1
         self.logMsg("url:%s\npage#:%s\nitems:%s\n\n" % (url, pageNumber, itemCount))
-        self.dialog.setLabelText("Downloading data from smart.fm, got %s items so far." % itemCount)
+        self.dialog.setLabelText("Downloading data from smart.fm, please wait...")
         self.dialog.setValue(self.currentPercent)
         mw.app.processEvents()
         
@@ -443,7 +473,7 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
     fact['iKnowType'] = item.type
     fact['Reading'] = item.reading
     if item.image_uri:
-        fact['Image_URI'] = u'<img src="%s" alt="[No Image]" />' % item.image_uri
+        fact['Image_URI'] = u'<img src="%s" alt="[No Image]">' % item.image_uri
     else:
         fact['Image_URI'] = u""
     if importSettings.downloadAudio and item.audio_uri:
@@ -502,19 +532,23 @@ def runImport(modelManager, importSettings):
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (currently) slow servers, or a slower internet connection. Please try your import again.")
+        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (frequently) slow servers, or a slower internet connection. Please try your import again.")
         mw.reset(mw.mainWin)
     except SmartFMDownloadError:
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. Please check your internet connection and ensure you can reach http://api.smart.fm<br /><br />If you are able to access smart.fm, please send the file 'iknow-smartfm-log.txt' (in the Anki plugins folder) to the plugin developer. See the IKNOW_IMPORT_README file for contact details.")
+        QMessageBox.warning(mw,"Warning","There was a problem retrieving data from Smart.fm. When you hit 'OK', a browser window will open to check that you can reach smart.fm.<br /><br />If this browser window shows an error, then please wait for smart.fm to be fixed, and try importing cards again. If there is no error in the browser window and you see some content relevant to your study list, please notify the plugin developer at http://github.com/ridisculous/anki-iknow-importer/issues")
+        try:
+            QDesktopServices.openUrl(QUrl(iknow.lastUrlFetched))
+        except:
+            pass
         mw.reset(mw.mainWin)
     except:
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer (see the IKNOW_IMPORT_README.txt file in your plugin folder for contact info).")
+        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer at http://github.com/ridisculous/anki-iknow-importer/issues")
         mw.reset(mw.mainWin)
 
 

@@ -3,6 +3,7 @@ import os, urllib, urllib2, re, operator, traceback
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
 #TODO
+MAX_HTTP_RETRIES = 3
 CACHE_API_RESULTS_PATH = None #os.path.join("/tmp", "smartfm_api_cache") #Set to 'None' (no quotes) to disable caching. do *not* enable unless you are debugging this script
 
 #API CACHING - useful for script debugging or if you know your lists won't be changing (if there is ANY chance your list might change, disable this)
@@ -14,7 +15,7 @@ if CACHE_API_RESULTS_PATH:
             CACHE_API_RESULTS_PATH = None
 if CACHE_API_RESULTS_PATH:    
     import sha
-    def getUrlOrCache(url):
+    def getUrlOrCache(url, logger):
         if url[-1] == "?":
             url = url[0:-1]
         hasher = sha.new(url)
@@ -24,10 +25,18 @@ if CACHE_API_RESULTS_PATH:
             urllib.urlretrieve(url, hashedFilename)
         return open(hashedFilename)
 else:
-    def getUrlOrCache(url):
+    def getUrlOrCache(url, logger):
         if url[-1] == "?":
             url = url[0:-1]
-        return urllib2.urlopen(url)
+        tries = 0
+        while True:
+            try:
+                return urllib2.urlopen(url)
+            except:
+                tries += 1
+                logger("try %s to fetch %s"  % (tries, url))
+                if tries >= MAX_HTTP_RETRIES:
+                    raise
 
 
 class SmartFMDownloadError(Exception):
@@ -137,8 +146,15 @@ class SmartFMVocab(SmartFMItem):
             self.expression = q1d(node, u'character')
             if q1(node, u'text'):
                 self.reading = q1d(node, u'text')
-        elif q1(node, u'text'):
-            self.expression = q1d(node, u'text')
+        else:
+            cueNodeText = qwa(node, u'cue', u'type', u'text')
+            if cueNodeText:
+                self.expression = q1d(cueNodeText, u'text')
+            else:
+                cueNodeImg = qwa(node, u'cue', u'type', u'image')
+                if cueNodeImg:
+                    imgdata = q1d(cueNodeImg, u'image')
+                    self.expression = u'<img src="%s">' % imgdata
         hansNode = qwa(node, u'transliteration', u'type', u'Hans')
         if hansNode:
             if not self.expression:
@@ -263,6 +279,7 @@ class SmartFMAPI(object):
     def __init__(self, logFile=None):
         self.debug = False
         self.callback = None
+        self.lastUrlFetched = u""
         if self.debug and logFile:
             self.log = open(logFile, 'a')
             self.log.write("\n\n----------------------START----------------------\n")
@@ -341,7 +358,8 @@ class SmartFMAPI(object):
             self._logMsg("fetching url %s" % currentUrl)
             if self.callback:
                 self.callback(currentUrl, page, len(totalResults.items) + len(totalResults.lists))
-            xml = getUrlOrCache(currentUrl)
+            self.lastUrlFetched = currentUrl
+            xml = getUrlOrCache(currentUrl, self._logMsg)
             newItemsOnPageCount = self._parsePage(xml, totalResults, translationLanguage, includeSentences)
             if newItemsOnPageCount > 0:
                 self._logMsg("at least one new list/item retrieved: %s" % newItemsOnPageCount)
@@ -354,6 +372,7 @@ class SmartFMAPI(object):
         return totalResults
     
     def list(self, listId):
+        url = None
         try:
             self._logMsg("list(%s)" % listId)
             url = SmartFMAPI.SmartFM_API_URL + "/lists/%s.xml" % listId
