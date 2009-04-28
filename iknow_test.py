@@ -10,7 +10,7 @@ class ListDataLoadsProperly(unittest.TestCase):
         self.failUnlessEqual(u"Japanese Core 2000:Step 3", smartfmlist.name)
         self.failUnlessEqual(u"en", smartfmlist.translation_language)
         self.failUnlessEqual(u"ja", smartfmlist.language)
-        self.failUnlessEqual(u"http://smart.fm/list/19056", smartfmlist.list_uri)
+        self.failUnlessEqual(u"http://smart.fm/lists/19056", smartfmlist.list_uri)
         self.failUnlessEqual(u"19056", smartfmlist.iknow_id)
         self.failUnlessEqual("list:19056", smartfmlist.uniqIdStr())
     
@@ -20,7 +20,7 @@ class ListDataLoadsProperly(unittest.TestCase):
         self.assertEqual(u"SAT Beginner".lower(), smartfmlist.name.lower(), "List name does not match website")
         self.assertEqual(u"en", smartfmlist.translation_language, "Translation language should be 'en'")
         self.assertEqual(u"en", smartfmlist.language, "List language should be 'en'")
-        self.assertEqual(u"http://smart.fm/list/700", smartfmlist.list_uri)
+        self.assertEqual(u"http://smart.fm/lists/700", smartfmlist.list_uri)
         self.assertEqual(u"700", smartfmlist.iknow_id)
         self.assertEqual("list:700", smartfmlist.uniqIdStr())
 
@@ -80,6 +80,9 @@ class SentencesOnly(unittest.TestCase):
     def testJapaneseToEnglishSentenceOrder(self):
         api = SmartFMAPI("debug.txt")
         sentences = api.listItems(19056, False, True)
+        self.failUnlessEqual(u"問題が一つあります。", sentences[0].expression.replace(u"<b>").replace(u"</b>"))
+        self.assert_(sentences[0].reading.find(u"もんだい が ひとつ あります") >= 0, "Reading not correct for first sentence")
+        
         self.failUnlessEqual(u"247757", sentences[0].iknow_id)
         self.failUnlessEqual(u"247759", sentences[1].iknow_id)
         self.failUnlessEqual(u"247761", sentences[2].iknow_id)

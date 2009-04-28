@@ -107,7 +107,7 @@ class SmartFMList(object):
         self.language = q1d(node, u'language')
         self.translation_language = q1d(node, u'translation_language')
         self.list_uri = node.getAttribute(u'href')
-        self.name = q1d(node, u'name')
+        self.name = q1d(node, u'title')
     
     def __repr__(self):
         return "id: %s\n\tlist uri: %s\n\tname: %s\n\tlang: %s\n\ttrans lang: %s\n\t" % (self.iknow_id, self.list_uri, self.name, self.language, self.translation_language)
