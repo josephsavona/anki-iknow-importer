@@ -20,15 +20,15 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         self.showVocab = showVocab
         self.setObjectName("smartfmCardCustomizeDialog")
         self.setWindowTitle("Smart.fm - Customize Card Types")
-        self.setMinimumSize(450, 370)
-        self.resize(450, 370)
+        self.setMinimumSize(450, 400)
+        self.resize(450, 400)
         
         self.mainLayout = QtGui.QVBoxLayout(self)
         #self.mainLayout.setSpacing(6)
         #self.mainLayout.setMargin(9)
         self.mainLayout.setObjectName("mainLayout")
         
-        self.labelTop = QtGui.QLabel("<b>Notes:</b><br />* Hover over a card type for more information about it.<br />* You can always edit cards later using the 'card templates' feature of Anki.<br />")
+        self.labelTop = QtGui.QLabel("<b>Notes:</b><br />* Hover over a card type for more information about it.<br />* You can always edit cards later using the 'card templates' feature of Anki.<br /><br />")
         self.mainLayout.addWidget(self.labelTop)
         
         if self.showVocab:
@@ -310,8 +310,8 @@ class SmartFMImportSettings:
 
 
 class SmartFMModelManager:
-    VOCAB_MODEL_NAME = u"Smart.fm Vocabulary"
-    SENTENCE_MODEL_NAME = u"Smart.fm Sentences"
+    VOCAB_MODEL_NAME = u"iKnow! Vocabulary"
+    SENTENCE_MODEL_NAME = u"iKnow! Sentences"
     
     def __init__(self, importSettings):
         self.importSettings = importSettings
