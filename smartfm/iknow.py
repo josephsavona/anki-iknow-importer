@@ -334,7 +334,7 @@ class SmartFMAPI(object):
                         changedItemCount += 1
         return changedItemCount
     
-    def _allPagesUntilEmpty(self, baseUrl, baseParams={}, translationLanguage=None, moreThanOnePage=True, includeSentences=False, startResultSet=None):
+    def _allPagesUntilEmpty(self, baseUrl, baseParams={}, translationLanguage=None, moreThanOnePage=True, includeSentences=False, startResultSet=None, gettingType=u"smart.fm data"):
         page = 0
         perPage = 25
         areMoreItems = True
@@ -357,7 +357,7 @@ class SmartFMAPI(object):
                 currentUrl += "%s=%s" % (key, currentParams[key])
             self._logMsg("fetching url %s" % currentUrl)
             if self.callback:
-                self.callback(currentUrl, page, len(totalResults.items) + len(totalResults.lists))
+                self.callback(currentUrl, page, len(totalResults.items) + len(totalResults.lists), gettingType)
             self.lastUrlFetched = currentUrl
             xml = getUrlOrCache(currentUrl, self._logMsg)
             newItemsOnPageCount = self._parsePage(xml, totalResults, translationLanguage, includeSentences)
@@ -376,7 +376,7 @@ class SmartFMAPI(object):
         try:
             self._logMsg("list(%s)" % listId)
             url = SmartFMAPI.SmartFM_API_URL + "/lists/%s.xml" % listId
-            results = self._allPagesUntilEmpty(url, moreThanOnePage=True)
+            results = self._allPagesUntilEmpty(url, moreThanOnePage=True, gettingType="list data")
             if len(results.lists.values()) > 0:
                 return results.lists.values()[0]
             else:
@@ -402,7 +402,7 @@ class SmartFMAPI(object):
             self._logMsg("listVocab(%s)" % smartfmlist.iknow_id)
             itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
             itemsParamsBase = {"include_sentences" : "false"}
-            results = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsParamsBase, includeSentences=False)
+            results = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsParamsBase, includeSentences=False, gettingType="items/vocab")
             return results.sortItems(True, False)
         except:
             raise SmartFMDownloadError(traceback.format_exc())
@@ -419,7 +419,7 @@ class SmartFMAPI(object):
     def listSentencesBilingual(self, smartfmlist):
         self._logMsg("listSentences(%s)" % smartfmlist.iknow_id)
         baseUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        results = self._allPagesUntilEmpty(baseUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True)
+        results = self._allPagesUntilEmpty(baseUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="sentences")
         return results.sortItems(False, True)
             
     def listItemsAll(self, smartfmlist):
@@ -432,9 +432,9 @@ class SmartFMAPI(object):
         self._logMsg("listItemsAll(%s)" % smartfmlist.iknow_id)
         itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
         itemsBaseParams = {"include_sentences" : "true"} #we want the data for the sentences so that we can tie vocab words to the sentences
-        allResults = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsBaseParams, includeSentences=True, translationLanguage=smartfmlist.translation_language)
+        allResults = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsBaseParams, includeSentences=True, translationLanguage=smartfmlist.translation_language, gettingType="items/vocab and sentences")
         sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True)
+        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
         for key in allResults.items.keys():
             if allResults.items[key].type == "sentence":
                 if key not in sentenceResults.items:

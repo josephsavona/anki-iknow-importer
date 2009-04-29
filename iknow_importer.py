@@ -6,7 +6,7 @@ from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 import os, re, time, urllib, traceback
-from iknow import *
+from smartfm.iknow import *
 
 
 class AudioDownloadError(Exception):
@@ -20,8 +20,8 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         self.showVocab = showVocab
         self.setObjectName("smartfmCardCustomizeDialog")
         self.setWindowTitle("Smart.fm - Customize Card Types")
-        self.setMinimumSize(450, 250)
-        self.resize(450, 250)
+        self.setMinimumSize(450, 370)
+        self.resize(450, 370)
         
         self.mainLayout = QtGui.QVBoxLayout(self)
         #self.mainLayout.setSpacing(6)
@@ -310,8 +310,8 @@ class SmartFMImportSettings:
 
 
 class SmartFMModelManager:
-    VOCAB_MODEL_NAME = u"iKnow! Vocabulary"
-    SENTENCE_MODEL_NAME = u"iKnow! Sentences"
+    VOCAB_MODEL_NAME = u"Smart.fm Vocabulary"
+    SENTENCE_MODEL_NAME = u"Smart.fm Sentences"
     
     def __init__(self, importSettings):
         self.importSettings = importSettings
@@ -375,7 +375,7 @@ class SmartFMModelManager:
 
 class ProgressTracker:
     def __init__(self, log=None):
-        self.dialog = QtGui.QProgressDialog(_("Importing..."), "", 0, 0, mw)
+        self.dialog = QtGui.QProgressDialog(mw)
         self.dialog.setCancelButton(None)
         self.dialog.setMaximum(0)
         self.dialog.setMinimumDuration(0)
@@ -398,10 +398,10 @@ class ProgressTracker:
             self.logFile.write(str(msg))
             self.logFile.flush()
             
-    def downloadCallback(self, url, pageNumber, itemCount):
+    def downloadCallback(self, url, pageNumber, itemCount, itemType):
         self.currentPercent += 1
         self.logMsg("url:%s\npage#:%s\nitems:%s\n\n" % (url, pageNumber, itemCount))
-        self.dialog.setLabelText("Downloading data from smart.fm, please wait...")
+        self.dialog.setLabelText("Downloading data from smart.fm - got %s %s so far - please wait..." % (itemCount, itemType))
         self.dialog.setValue(self.currentPercent)
         mw.app.processEvents()
         
@@ -548,7 +548,7 @@ def runImport(modelManager, importSettings):
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer at http://github.com/ridisculous/anki-iknow-importer/issues")
+        QMessageBox.warning(mw, "Warning", "There was an unknown error importing items. Please contact the plugin developer at http://github.com/ridisculous/anki-iknow-importer/issues<br /><br />Please be sure to include the file 'iknow-smartfm-log.txt' from your plugins directory with a description of what you tried to do before this error.")
         mw.reset(mw.mainWin)
 
 
