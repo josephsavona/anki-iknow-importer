@@ -8,6 +8,7 @@ from anki.facts import Field
 import os, re, time, urllib, traceback
 from smartfm.iknow import *
 
+DOWNLOAD_IMAGES = False
 
 class AudioDownloadError(Exception):
     pass
@@ -473,7 +474,13 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
     fact['iKnowType'] = item.type
     fact['Reading'] = item.reading
     if item.image_uri:
-        fact['Image_URI'] = u'<img src="%s" alt="[No Image]">' % item.image_uri
+        if DOWNLOAD_IMAGES: 
+            #downloading images from smart.fm may be prohibited by smart.fm in certain cases. please only enable DOWNLOAD_IMAGES if you are sure that the list you are downloading has public domain (non-copyrighted or free for use) images.
+            (filePath, headers) = urllib.urlretrieve(item.image_uri)
+            path = mw.deck.addMedia(filePath)
+            fact['Image_URI'] = u'<img src="%s" alt="[No Image]">' % item.image_uri
+        else:
+            fact['Image_URI'] = u'<img src="%s" alt="[No Image]">' % item.image_uri
     else:
         fact['Image_URI'] = u""
     if importSettings.downloadAudio and item.audio_uri:
