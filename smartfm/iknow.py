@@ -1,5 +1,5 @@
 from xml.dom import pulldom, Node
-import os, urllib, urllib2, re, operator, traceback
+import os, urllib, urllib2, re, operator, traceback, time
 
 #CACHE_API_RESULTS_PATH = None #remove comment from beginning of this line, and add comment to next line, in order to cache results
 #TODO
@@ -73,6 +73,21 @@ def qwa(node, tag, attribute, value):
             if attrValue and attrValue == value:
                 return n
     return None
+
+def c1(node, tag):
+    if node and node.childNodes:
+        for c in node.childNodes:
+            if c.tagName == tag:
+                return c
+
+def c1d(node, tag):
+    n = c1(node, tag)
+    if not n:
+        return u""
+    text = u""
+    for c in n.childNodes:
+        text += c.data
+    return text
 
 def qnodetext(node):
     text = u""
@@ -168,8 +183,10 @@ class SmartFMVocab(SmartFMItem):
         meaningNode = qwa(node, u'response', u'type', u'meaning')
         if meaningNode:
             self.meaning = q1d(meaningNode, u'text')
-        if q1(node, u'sound'):
-            self.audio_uri = q1d(node, u'sound')
+        cueNode = c1(node, u'cue')
+        if cueNode and c1(cueNode, u'sound'):
+            self.audio_uri = c1d(cueNode, u'sound')
+        #not technically sure, but seems that image doesn't have to be part of queue, since the image would be generic regardless of an item's meaning. sound is a problem because we don't want audio from the wrong language
         if q1(node, u'image'):
             self.image_uri = q1d(node, u'image')
         
@@ -216,8 +233,8 @@ class SmartFMSentence(SmartFMItem):
         meaningSentenceNode = qwa(node, u'sentence', u'language', translationLanguage)
         if meaningSentenceNode:
             self.meaning = q1d(meaningSentenceNode, u'text')
-        if q1(node, u'sound'):
-            self.audio_uri = q1d(node, u'sound')
+        if c1(node, u'sound'):
+            self.audio_uri = c1d(node, u'sound')
         if q1(node, u'image'):
             self.image_uri = q1d(node, u'image')
 
@@ -277,14 +294,18 @@ class SmartFMAPI(object):
     SmartFM_API_URL = "http://api.smart.fm"
     
     def __init__(self, logFile=None):
-        self.debug = False
+        self.debug = True
         self.callback = None
         self.lastUrlFetched = u""
         if self.debug and logFile:
             self.log = open(logFile, 'a')
             self.log.write("\n\n----------------------START----------------------\n")
+            self.urlTimeTotal = 0
+            self.processTimeTotal = 0
         else:
             self.log = None
+            self.urlTimeTotal = None
+            self.processTimeTotal = None
     
     def setCallback(self, callback):
         self.callback = callback
@@ -296,8 +317,14 @@ class SmartFMAPI(object):
     
     def _close(self):
         if self.debug and self.log:
+            self._logMsg("total url time: %s\ntotal process time: %s\nratio: %s" % (self.urlTimeTotal, self.processTimeTotal, self.urlTimeTotal / self.processTimeTotal))
             self.log.flush()
             self.log.close()
+    
+    def _logUrlTimeAndProcessTime(self, urlTime, processTime):
+        if self.debug:
+            self.urlTimeTotal += urlTime
+            self.processTimeTotal += processTime
         
     def _parsePage(self, xml, pageResults, translationLanguage, includeSentences):
         events = pulldom.parse(xml)
@@ -355,12 +382,18 @@ class SmartFMAPI(object):
             for i, key in enumerate(currentParams.keys()):
                 if i != 0: currentUrl += u"&"
                 currentUrl += "%s=%s" % (key, currentParams[key])
-            self._logMsg("fetching url %s" % currentUrl)
             if self.callback:
                 self.callback(currentUrl, page, len(totalResults.items) + len(totalResults.lists), gettingType)
             self.lastUrlFetched = currentUrl
+            urlpreTime = time.time()
             xml = getUrlOrCache(currentUrl, self._logMsg)
+            urlpostTime = time.time()
+            self._logMsg("timing: got url in %s" % (urlpostTime - urlpreTime))
+            procpreTime = time.time()
             newItemsOnPageCount = self._parsePage(xml, totalResults, translationLanguage, includeSentences)
+            procpostTime = time.time()
+            self._logMsg("timing: parsed xml in %s" % (procpostTime - procpreTime))
+            self._logUrlTimeAndProcessTime((urlpostTime - urlpreTime), (procpostTime - procpreTime))
             if newItemsOnPageCount > 0:
                 self._logMsg("at least one new list/item retrieved: %s" % newItemsOnPageCount)
             else:
@@ -383,8 +416,28 @@ class SmartFMAPI(object):
                 raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm list %s" % listId
         except:
             raise SmartFMDownloadError(traceback.format_exc())
-            
-        
+    
+    def sentence(self, iknowId, lang=u"en"):
+        return self.genericItem("sentence", iknowId, lang)
+    
+    def item(self, iknowId):
+        return self.genericItem("item", iknowId, u"en")
+    
+    def genericItem(self, itemtype, iknowId, lang):
+        url = None
+        try:
+            includeSentences = False
+            if itemtype == "sentence":
+                includeSentences = True
+            self._logMsg("%s(%s)" % (type, iknowId))
+            url = SmartFMAPI.SmartFM_API_URL + "/%ss/%s.xml" % (itemtype, iknowId)
+            results = self._allPagesUntilEmpty(url, moreThanOnePage=False, gettingType="sentence", includeSentences=includeSentences, translationLanguage=lang)
+            if len(results.items.values()) > 0:
+                return results.items.values()[0]
+            else:
+                raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm sentence %s" % iknowId
+        except:
+            raise SmartFMDownloadError(traceback.format_exc())
     
     def listItems(self, listId, includeVocab, includeSentences):
         smartfmlist = self.list(listId)
@@ -435,8 +488,11 @@ class SmartFMAPI(object):
         allResults = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsBaseParams, includeSentences=True, translationLanguage=smartfmlist.translation_language, gettingType="items/vocab and sentences")
         sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
         sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
+        pretime = time.time()
         for key in allResults.items.keys():
             if allResults.items[key].type == "sentence":
                 if key not in sentenceResults.items:
                     del allResults.items[key]
+        posttime = time.time()
+        self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
         return allResults
