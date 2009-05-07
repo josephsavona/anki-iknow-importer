@@ -5,7 +5,7 @@ from ankiqt import mw
 from ankiqt.ui.utils import getOnlyText
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
-import os, time
+import os, time, traceback
 try:
     from sqlite3 import dbapi2 as sqlite
 except:
@@ -233,13 +233,22 @@ class RTKImportDialog(QtGui.QDialog):
             else:
                 fact[u'Image_StrokeOrderAnimation'] = u""
             
-            mw.deck.addFact(fact)
+            newfact = mw.deck.addFact(fact)
+            thecard = None
+            for card in newfact.cards:
+                thecard = mw.deck.cardFromId(card.id)
+                mw.deck.answerCard(thecard, 2)
             mw.deck.save()
             mw.reset()
             self.statusLabel.setText("Added card for kanji: %s" % self.currentKanji)
             self.reviewerWidget.addQuestionAnswerForReview(unicode(self.fld_keyword.text()), self.currentKanji)
             self.incrementKanji()
         except:
+            logpath = os.path.join(mw.pluginsFolder(), "log-rtk-importer.txt")
+            log = open(logpath, 'a')
+            log.write(traceback.format_exc())
+            log.flush()
+            log.close()
             QMessageBox.warning(mw, "Warning","Your card may contain duplicate data. Please check that you have the correct keyword and that you haven't re-used the keyword or story before by accident. If you are sure there is no duplicate, then please contact the developer.")
     
     def incrementKanji(self):
