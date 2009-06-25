@@ -173,9 +173,9 @@ class SmartFMVocab(SmartFMItem):
         hansNode = qwa(node, u'transliteration', u'type', u'Hans')
         if hansNode:
             if not self.expression:
-                self.expression = qnodetext(hansNode)
+                self.expression = u"hans: " + qnodetext(hansNode)
             elif qnodetext(hansNode) != self.expression:
-                self.expression = self.expression + u"<br />" + qnodetext(hansNode)
+                self.expression = u"trad: " + self.expression + u"<br />hans: " + qnodetext(hansNode)
         if not self.reading:
             readingNode = qwa(node, u'transliteration', u'type', u'Latn')
             if readingNode:
@@ -193,6 +193,8 @@ class SmartFMVocab(SmartFMItem):
     def sentencesFromDOM(self, node, translationLanguage):
         sentencesNode = q1(node, u'sentences')
         sentenceslist = list()
+        if not sentencesNode:
+            return sentenceslist
         for sentenceNode in sentencesNode.childNodes:
             if sentenceNode.nodeType == Node.ELEMENT_NODE and sentenceNode.tagName.lower() == "sentence":
                 nextsentence = SmartFMSentence()
@@ -297,15 +299,15 @@ class SmartFMAPI(object):
         self.debug = True
         self.callback = None
         self.lastUrlFetched = u""
-        if self.debug and logFile:
-            self.log = open(logFile, 'a')
-            self.log.write("\n\n----------------------START----------------------\n")
+        self.log = None
+        self.urlTimeTotal = None
+        self.processTimeTotal = None
+        if self.debug:
+            if logFile:
+                self.log = open(logFile, 'a')
+                self.log.write("\n\n----------------------START----------------------\n")
             self.urlTimeTotal = 0
             self.processTimeTotal = 0
-        else:
-            self.log = None
-            self.urlTimeTotal = None
-            self.processTimeTotal = None
     
     def setCallback(self, callback):
         self.callback = callback
@@ -486,13 +488,15 @@ class SmartFMAPI(object):
         itemsUrlBase = SmartFMAPI.SmartFM_API_URL + "/lists/%s/items.xml" % smartfmlist.iknow_id
         itemsBaseParams = {"include_sentences" : "true"} #we want the data for the sentences so that we can tie vocab words to the sentences
         allResults = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsBaseParams, includeSentences=True, translationLanguage=smartfmlist.translation_language, gettingType="items/vocab and sentences")
-        sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
-        pretime = time.time()
-        for key in allResults.items.keys():
-            if allResults.items[key].type == "sentence":
-                if key not in sentenceResults.items:
-                    del allResults.items[key]
-        posttime = time.time()
-        self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
+        
+        #NOTE: DEPRECATED: as of mid June 2009, seems that smart.fm has fixed their list/items API. If the include_sentences param is passed as true, only sentences in the list itself is returned. skipping the below step seems to save a massive amount of time
+        #sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
+        #sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
+        #pretime = time.time()
+        #for key in allResults.items.keys():
+        #    if allResults.items[key].type == "sentence":
+        #        if key not in sentenceResults.items:
+        #            del allResults.items[key]
+        #posttime = time.time()
+        #self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
         return allResults

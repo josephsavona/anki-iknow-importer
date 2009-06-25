@@ -30,6 +30,9 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
         self.mainLayout.setObjectName("mainLayout")
         
         self.labelTop = QtGui.QLabel("<b>Notes:</b><br />* Hover over a card type for more information about it.<br />* You can always edit cards later using the 'card templates' feature of Anki.<br /><br />")
+        self.labelTop.setWordWrap(True)
+        self.labelTop.setMaximumHeight(80)
+        self.labelTop.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Fixed)
         self.mainLayout.addWidget(self.labelTop)
         
         if self.showVocab:
@@ -73,6 +76,8 @@ class SmartFMModelCustomizeDialog(QtGui.QDialog):
             self.checkReadingSentences.setChecked(self.cardSettings.sentenceReading)
             self.checkReadingSentences.setToolTip("Read the text and remember its meaning.")
             self.mainLayout.addWidget(self.checkReadingSentences)
+        
+        self.mainLayout.addItem(QtGui.QSpacerItem(5, 30, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
         
         self.btnSubmit = QtGui.QPushButton(self)
         self.btnSubmit.setText("Start Import")
@@ -162,6 +167,8 @@ class IknowImportDialog(QtGui.QDialog):
         self.check_boldKeywordBilingual = QtGui.QCheckBox("Bold sentence keywords for bilingual lists")
         self.check_boldKeywordBilingual.setChecked(self.importSettings.boldBilingualKeywords)
         self.settingsLayout.addWidget(self.check_boldKeywordBilingual)
+        
+        self.settingsLayout.addItem(QtGui.QSpacerItem(5, 50, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
         
         self.btnStartImport = QtGui.QPushButton(self)
         self.btnStartImport.setText(_("Start Import"))
@@ -350,7 +357,7 @@ class SmartFMModelManager:
     def createModel(self, modelName, production, listening, reading):
         model = Model(modelName)
         model.addFieldModel(FieldModel(u'Expression', True, False))
-        model.addFieldModel(FieldModel(u'Meaning', True, False))
+        model.addFieldModel(FieldModel(u'Meaning', False, False))
         model.addFieldModel(FieldModel(u'Reading', False, False))
         model.addFieldModel(FieldModel(u'Audio', False, False))
         model.addFieldModel(FieldModel(u'Image_URI', False, False))
@@ -539,7 +546,7 @@ def runImport(modelManager, importSettings):
         progress.logMsg(traceback.format_exc())
         progress.dialog.cancel()
         progress.close()
-        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This is typically caused by smart.fm's (frequently) slow servers, or a slower internet connection. Please try your import again.")
+        QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This may be caused by a slower internet connection or smart.fm's (occasionally slow) servers. Please try your import again.")
         mw.reset(mw.mainWin)
     except SmartFMDownloadError:
         progress.logMsg(traceback.format_exc())
