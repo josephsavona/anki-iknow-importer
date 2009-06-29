@@ -114,6 +114,12 @@ class SmartFMList(object):
         self.type = u"list"
         self.index = None
     
+    def isBilingual(self):
+        if self.language and self.translation_language and self.language != self.translation_language:
+            return True
+        else:
+            return False
+    
     def uniqIdStr(self):
         return self.type + u":" + self.iknow_id
     
@@ -222,9 +228,9 @@ class SmartFMSentence(SmartFMItem):
         hansNode = qwa(node, u'transliteration', u'type', u'Hans')
         if hansNode:
             if not self.expression:
-                self.expression = qnodetext(hansNode)
+                self.expression = u"hans: " + qnodetext(hansNode)
             elif qnodetext(hansNode) != self.expression:
-                self.expression = self.expression + u"<br />" + qnodetext(hansNode)
+                self.expression = u"trad: " + self.expression + u"<br />hans: " + qnodetext(hansNode)
         readingNode = qwa(node, u'transliteration', u'type', u'Hrkt')
         if readingNode:
             self.reading = qnodetext(readingNode)

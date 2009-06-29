@@ -7,6 +7,7 @@ from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 import os, re, time, urllib, traceback
 from smartfm.iknow import *
+from smartfm.ja_reading import getAdjustedReadingOfText
 
 DOWNLOAD_IMAGES = False
 
@@ -335,6 +336,23 @@ class SmartFMModelManager:
                 return m
         return None
     
+    def tagModelsAsJapanese(self):
+        deckModified = False
+        if self._tagModelAsJapanese(self.vocabModel):
+            deckModified = True
+        if self._tagModelAsJapanese(self.sentenceModel):
+            deckModified = True
+        if deckModified:
+            mw.deck.setModified()
+            mw.deck.save()
+    
+    def _tagModelAsJapanese(self, model):
+        if model.tags.find(u"Japanese") < 0:
+            model.tags = model.tags + u" Japanese"
+            model.setModified()
+            return True
+        return False
+    
     def isNeedsVocabModel(self):
         if self.importSettings.importVocab and not self.vocabModel:
             return True
@@ -357,7 +375,7 @@ class SmartFMModelManager:
     def createModel(self, modelName, production, listening, reading):
         model = Model(modelName)
         model.addFieldModel(FieldModel(u'Expression', True, False))
-        model.addFieldModel(FieldModel(u'Meaning', False, False))
+        model.addFieldModel(FieldModel(u'Meaning', True, False))
         model.addFieldModel(FieldModel(u'Reading', False, False))
         model.addFieldModel(FieldModel(u'Audio', False, False))
         model.addFieldModel(FieldModel(u'Image_URI', False, False))
@@ -379,6 +397,7 @@ class SmartFMModelManager:
                 u'%(Expression)s',
                 u'%(Reading)s<br>%(Meaning)s<br>%(Audio)s'))
         mw.deck.addModel(model)
+        
 
 
 class ProgressTracker:
@@ -429,16 +448,22 @@ class ProgressTracker:
 
 
 
-def formatIknowItemPreImport(item, importSettings):
+def formatIknowItemPreImport(item, importSettings, isBilingualItem):
     mainKeys = ["meaning", "expression", "reading"]
-    hasOwnMeaning = True
     #store the reading
     if not item.reading:
         item.reading = u""
         
-    if not item.meaning:
-        hasOwnMeaning = False
-        
+    try:
+        if item.language.lower() == "ja":
+            adjustedReading = getAdjustedReadingOfText(item.expression, item.reading)
+            if adjustedReading:
+                item.reading = adjustedReading
+            else:
+                item.reading += u" -- !EditReading!"
+    except:
+        pass
+    
     #for sentences in a monolingual list, use the item meaning 
     if not item.meaning and len(item.secondary_meanings) > 0:
         item.meaning = u""
@@ -450,8 +475,10 @@ def formatIknowItemPreImport(item, importSettings):
             item.meaning = item.meaning + u"<br />" + secondary
     
     ###if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
-    if hasOwnMeaning and not importSettings.boldBilingualKeywords:
-        item.meaning = item.meaning.replace('<b>','').replace('</b>','')
+    ###TODO: in the case of bilingual lists with sentences conaining no meaning, this next check will fail.
+    if isBilingualItem and not importSettings.boldBilingualKeywords:
+        if item.meaning:
+            item.meaning = item.meaning.replace('<b>','').replace('</b>','')
         item.reading = item.reading.replace('<b>','').replace('</b>','')
         item.expression = item.expression.replace('<b>','').replace('</b>','')
     ###if monolingual list, and we DO want bolding on monolingual lists, then bold the primary word if it isn't already bolded        
@@ -460,7 +487,8 @@ def formatIknowItemPreImport(item, importSettings):
     #        if item[key].find('<b>') >= 0:
     #            continue
     #        item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
-
+    if not item.meaning or len(item.meaning.strip()) == 0:
+        item.meaning = u"!EditMeaning! -- no meaning available on smart.fm!"
 
 
 def importIknowItem(item, sentenceModel, vocabModel, importSettings):
@@ -517,6 +545,14 @@ def runImport(modelManager, importSettings):
         importSettings.saveToConfig()
         progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
         iknow = SmartFMAPI()
+        iknowList = iknow.list(importSettings.listId)
+        try:
+            if iknowList.language and iknowList.language == "ja":
+                modelManager.tagModelsAsJapanese()
+        except:
+            progress.logMsg("Error trying to tag models as Japanese")
+            progress.logMsg(traceback.format_exc())
+            pass
         iknow.setCallback(progress.downloadCallback)
         items = iknow.listItems(importSettings.listId, (importSettings.importVocab or importSettings.includeItemMeaning), importSettings.importSentences)
         progress.preImportResetProgress(len(items))
@@ -530,7 +566,7 @@ def runImport(modelManager, importSettings):
                 continue
             if not importSettings.importVocab and item.type == "item":
                 continue
-            formatIknowItemPreImport(item, importSettings)
+            formatIknowItemPreImport(item, importSettings, iknowList.isBilingual())
             progress.importCallback(i, item.expression)
             if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
                 totalImported += 1
@@ -569,6 +605,9 @@ def runImport(modelManager, importSettings):
 
 def runDialog():
     importSettings = SmartFMImportSettings()
+    if not mw.deck:
+        QMessageBox.information(mw, "Information", "Please open a deck before using this plugin. Thanks!")
+        return
     dialog = IknowImportDialog(importSettings)
     if dialog.exec_():
         #DEBUG: QMessageBox.information(mw, "Information", "Got some import settings '%s' type '%s'" % (importSettings.listId, str(type(importSettings.listId))))
