@@ -183,9 +183,16 @@ class SmartFMVocab(SmartFMItem):
             elif qnodetext(hansNode) != self.expression:
                 self.expression = u"trad: " + self.expression + u"<br />hans: " + qnodetext(hansNode)
         if not self.reading:
-            readingNode = qwa(node, u'transliteration', u'type', u'Latn')
+            readingNode = qwa(node, u'transliteration', u'type', u'Hrkt')
+            readingNodeAlt = qwa(node, u'transliteration', u'type', u'Hira')
             if readingNode:
                 self.reading = qnodetext(readingNode)
+            elif readingNodeAlt:
+                self.reading = qnodetext(readingNodeAlt)
+            else:
+                readingNode = qwa(node, u'transliteration', u'type', u'Latn')
+                if readingNode:
+                    self.reading = qnodetext(readingNode)
         meaningNode = qwa(node, u'response', u'type', u'meaning')
         if meaningNode:
             self.meaning = q1d(meaningNode, u'text')
@@ -232,8 +239,11 @@ class SmartFMSentence(SmartFMItem):
             elif qnodetext(hansNode) != self.expression:
                 self.expression = u"trad: " + self.expression + u"<br />hans: " + qnodetext(hansNode)
         readingNode = qwa(node, u'transliteration', u'type', u'Hrkt')
+        readingNodeAlt = qwa(node, u'transliteration', u'type', u'Hira')
         if readingNode:
             self.reading = qnodetext(readingNode)
+        elif readingNodeAlt:
+            self.reading = qnodetext(readingNodeAlt)
         else:
             readingNode = qwa(node, u'transliteration', u'type', u'Latn')
             if readingNode:
