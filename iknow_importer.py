@@ -14,6 +14,9 @@ DOWNLOAD_IMAGES = False
 class AudioDownloadError(Exception):
     pass
 
+class AddMediaException(Exception):
+    pass
+
 class SmartFMModelCustomizeDialog(QtGui.QDialog):
     def __init__(self, cardSettings, showVocab, showSentence):
         QtGui.QDialog.__init__(self, mw)
@@ -111,7 +114,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.setObjectName("Smart.fm Import")
         self.setWindowTitle("Smart.fm Import")
         self.setMinimumSize(450, 450)
-        self.resize(450, 450)
+        self.resize(450, 480)
     
         self.mainLayout = QtGui.QVBoxLayout(self)
         self.mainLayout.setSpacing(6)
@@ -159,6 +162,7 @@ class IknowImportDialog(QtGui.QDialog):
         
         self.check_includeItemMeaning = QtGui.QCheckBox("Include keyword meanings in sentence meanings")
         self.check_includeItemMeaning.setChecked(self.importSettings.includeItemMeaning)
+        self.check_includeItemMeaning.setToolTip("Adds the keyword of the sentence<br /> and its meaning to the end of the sentence meaning.")
         self.settingsLayout.addWidget(self.check_includeItemMeaning)
         
         #self.check_boldKeywordMonolingual = QtGui.QCheckBox("Bold sentence keywords for monolingual lists")
@@ -166,10 +170,16 @@ class IknowImportDialog(QtGui.QDialog):
         #self.settingsLayout.addWidget(self.check_boldKeywordMonolingual)
         
         self.check_boldKeywordBilingual = QtGui.QCheckBox("Bold sentence keywords for bilingual lists")
+        self.check_boldKeywordBilingual.setToolTip("Good for languages using the roman alphabet<br /> not suggested for languages using Chinese Characters or other scripts.")
         self.check_boldKeywordBilingual.setChecked(self.importSettings.boldBilingualKeywords)
         self.settingsLayout.addWidget(self.check_boldKeywordBilingual)
         
-        self.settingsLayout.addItem(QtGui.QSpacerItem(5, 50, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
+        self.check_reverseStudyDirection = QtGui.QCheckBox("Reverse study direction of list")
+        self.check_reverseStudyDirection.setChecked(False)
+        self.check_reverseStudyDirection.setToolTip("Makes a 'Japanese speaker learning English' list and turns it into a 'English speaker learning Japanese' list.")
+        self.settingsLayout.addWidget(self.check_reverseStudyDirection)
+        
+        self.settingsLayout.addItem(QtGui.QSpacerItem(5, 30, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
         
         self.btnStartImport = QtGui.QPushButton(self)
         self.btnStartImport.setText(_("Start Import"))
@@ -233,6 +243,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.importSettings.includeItemMeaning = self.check_includeItemMeaning.isChecked()
         self.importSettings.boldBilingualKeywords = self.check_boldKeywordBilingual.isChecked()
         #self.importSettings.boldMonolingualKeywords = self.check_boldKeywordMonolingual.isChecked()
+        self.importSettings.reverseStudyDirection = self.check_reverseStudyDirection.isChecked()
         
         if len(errors) > 0:
             for i, error in enumerate(errors):
@@ -266,6 +277,7 @@ class SmartFMImportSettings:
         self.includeItemMeaning = True
         self.boldBilingualKeywords = False
         self.boldMonolingualKeywords = True
+        self.reverseStudyDirection = False
         self.loadFromConfig()
     
     def loadFromConfig(self):
@@ -448,31 +460,47 @@ class ProgressTracker:
 
 
 
-def formatIknowItemPreImport(item, importSettings, isBilingualItem):
-    mainKeys = ["meaning", "expression", "reading"]
-    #store the reading
-    if not item.reading:
+def formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSettings):
+    # first ensure there is both an expression and a meaning: the original meaning will become the new expression so it must also exist.
+    if not item.meaning or len(item.meaning.strip()) == 0:
+        return False
+    newExpression = item.meaning
+    item.meaning = item.expression
+    item.expression = newExpression
+    item.audio_uri = None #TODO: see if there's a fast way to check for audio on the translation
+    if iknowList.translation_language:
+        item.language = iknowList.translation_language
+    return True
+
+def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem):
+    if importSettings.reverseStudyDirection:
+        if not formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSettings):
+            return False
+            
+    if not item.reading or len(item.reading.strip()) == 0:
         item.reading = u""
         
     try:
         if item.language.lower() == "ja":
-            adjustedReading = getAdjustedReadingOfText(item.expression, item.reading)
-            if adjustedReading:
-                item.reading = adjustedReading
+            (adjustedReading, readingSource) = getAdjustedReadingOfText(item.expression, item.reading)
+            if readingSource == "differentreading":
+                if len(item.reading) > 0:
+                    item.reading += u"<br />"
+                item.reading += adjustedReading + u" -- !EditReading!"
             else:
-                item.reading += u" -- !EditReading!"
+                item.reading = adjustedReading
     except:
         pass
     
-    #for sentences in a monolingual list, use the item meaning 
+    # for sentences in a monolingual list, use the item meaning 
     if not item.meaning and len(item.secondary_meanings) > 0:
         item.meaning = u""
         for secondary in item.secondary_meanings:
-            item.meaning = item.meaning + u"<br />" + secondary
+            item.meaning = item.meaning + u"<br />" + secondary.expression + u" -- " + secondary.meaning
     elif importSettings.includeItemMeaning and len(item.secondary_meanings) > 0:
         #note this only applies when the sentence already has its own meaning and we are possibly adding to it
         for secondary in item.secondary_meanings:
-            item.meaning = item.meaning + u"<br />" + secondary
+            item.meaning = item.meaning + u"<br />" + secondary.expression + u" -- " + secondary.meaning
     
     ###if it has its own meaning (bilingual list) and we do NOT want bolding on bilingual lists, then remove the default bolding from smart.fm
     ###TODO: in the case of bilingual lists with sentences conaining no meaning, this next check will fail.
@@ -489,14 +517,23 @@ def formatIknowItemPreImport(item, importSettings, isBilingualItem):
     #        item[key] = item[key].replace(item['core_word'], u"<b>" + item['core_word'] + u"</b>")
     if not item.meaning or len(item.meaning.strip()) == 0:
         item.meaning = u"!EditMeaning! -- no meaning available on smart.fm!"
+    return True
 
 
 def importIknowItem(item, sentenceModel, vocabModel, importSettings):
-    query = mw.deck.s.query(Field).filter_by(value=item.uniqIdStr())
-    field = query.first()
+    idQuery = mw.deck.s.query(Field).filter_by(value=item.uniqIdStr())
+    field = idQuery.first()
     if field:
-        return False#is duplicate, so return immediately
-        
+        return False#is duplicate of an existing iknow ID, so return immediately
+    
+    try:
+        expQuery = mw.deck.s.query(Field).filter_by(value=item.expression)
+        field = expQuery.first()
+        if field:
+            return False #duplicate expression, the definition may be different but we don't want dup cards
+    except:
+        pass #might fail due to null expression which we catch other ways
+    
     if item.type == "item":
         model = vocabModel
     elif item.type == "sentence":
@@ -521,17 +558,30 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
     if importSettings.downloadAudio and item.audio_uri:
         tries = 0
         gotAudioForItem = False
+        filePath = None
+        headers = None
+        path = None
+        
+        # make several attempts to download audio from smart.fm
         while not gotAudioForItem and tries < 3:
             tries += 1
             try:
                 (filePath, headers) = urllib.urlretrieve(item.audio_uri)
-                path = mw.deck.addMedia(filePath)
-                fact['Audio'] = u"[sound:%s]" % path
                 gotAudioForItem = True
             except:
                 pass
         if not gotAudioForItem:
             raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item.audio_uri
+        
+        # now try to add the media file to the deck
+        try:
+            path = mw.deck.addMedia(filePath)
+        except:
+            raise AddMediaException, ("Failed to add media from URI %s which was downloaded to %s to the media dir at %s" % (item.audio_uri, filePath, mw.deck.mediaDir())) + traceback.format_exc()
+        
+        fact['Audio'] = u"[sound:%s]" % path
+    elif item.audio_uri:
+        fact['Audio'] = u"[sound:%s]" % item.audio_uri
     else:
         fact['Audio'] = u""
     mw.deck.addFact(fact)
@@ -566,11 +616,13 @@ def runImport(modelManager, importSettings):
                 continue
             if not importSettings.importVocab and item.type == "item":
                 continue
-            formatIknowItemPreImport(item, importSettings, iknowList.isBilingual())
-            progress.importCallback(i, item.expression)
-            if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
-                totalImported += 1
-                totalImportedByType[item.type] = totalImportedByType[item.type] + 1
+            if formatIknowItemPreImport(item, iknowList, importSettings, iknowList.isBilingual()):
+                progress.importCallback(i, item.expression)
+                if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
+                    totalImported += 1
+                    totalImportedByType[item.type] = totalImportedByType[item.type] + 1
+                else:
+                    totalDup += 1
             else:
                 totalDup += 1
         progress.dialog.cancel()
@@ -583,6 +635,12 @@ def runImport(modelManager, importSettings):
         progress.dialog.cancel()
         progress.close()
         QMessageBox.warning(mw, "Warning", "Data for one item could not be retrieved even after several retries. This may be caused by a slower internet connection or smart.fm's (occasionally slow) servers. Please try your import again.")
+        mw.reset(mw.mainWin)
+    except AddMediaException:
+        progress.logMsg(traceback.format_exc())
+        progress.dialog.cancel()
+        progress.close()
+        QMessageBox.warning(mw, "Warning", "Anki was unable to add an audio file to your deck. This may be caused by a problem with Anki, the smart.fm! plugin, or both. Please inform the plugin developer.")
         mw.reset(mw.mainWin)
     except SmartFMDownloadError:
         progress.logMsg(traceback.format_exc())
@@ -635,7 +693,25 @@ def runDialog():
         #DEBUG: QMessageBox.warning(mw, "Warning", "Cancelled on import settings dialog")
 
 
+def showHelp():
+    try:
+        QDesktopServices.openUrl(QUrl("http://wiki.github.com/ridisculous/anki-iknow-importer"))
+    except:
+        QMessageBox.information(mw, "Information", "Please see the smart.fm importer wiki at http://wiki.github.com/ridisculous/anki-iknow-importer.")
+
 dialogStart = QAction(mw)
 dialogStart.setText("Smart.fm Importer")
 mw.connect(dialogStart, SIGNAL("triggered()"), runDialog)
 mw.mainWin.menuTools.addAction(dialogStart)
+
+mw.actionSmartFMHelp = QtGui.QAction(mw)
+mw.actionSmartFMHelp.setObjectName("smartfmHelp")
+mw.actionSmartFMHelp.setText(_("Open Smart.FM Importer Help Wiki"))
+mw.connect(mw.actionSmartFMHelp, SIGNAL("triggered()"), showHelp)
+menu = None
+try:
+    menu = mw.mainWin.menuPlugins
+except:
+    menu = mw.mainWin.menuTools
+menu.addSeparator()
+menu.addAction(mw.actionSmartFMHelp)

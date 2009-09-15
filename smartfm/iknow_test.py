@@ -102,7 +102,7 @@ class SentencesOnly(unittest.TestCase):
         sentences = api.listItems(700, False, True)
         for sentence in sentences:
             self.assertEqual(u"sentence", sentence.type)
-            self.assertEqual(None, sentence.meaning, "Single language list sentences have no 'meaning' or translation.")
+            self.assertEqual(u"", sentence.meaning, "Single language list sentences have no 'meaning' or translation. Value should be empty string.")
             self.assert_(len(sentence.secondary_meanings) > 0, "List sentences should all have at least one secondary meaning: %s" % sentence.expression)
         api._close()
     

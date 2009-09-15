@@ -80,6 +80,13 @@ def c1(node, tag):
             if c.tagName == tag:
                 return c
 
+def c1wa(node, tag, attribute, value):
+    if node and node.childNodes:
+        for c in node.childNodes:
+            if c.tagName == tag and c.hasAttribute(attribute):
+                if c.getAttribute(attribute) == value:
+                    return c
+
 def c1d(node, tag):
     n = c1(node, tag)
     if not n:
@@ -183,14 +190,14 @@ class SmartFMVocab(SmartFMItem):
             elif qnodetext(hansNode) != self.expression:
                 self.expression = u"trad: " + self.expression + u"<br />hans: " + qnodetext(hansNode)
         if not self.reading:
-            readingNode = qwa(node, u'transliteration', u'type', u'Hrkt')
-            readingNodeAlt = qwa(node, u'transliteration', u'type', u'Hira')
+            readingNode = c1wa(node, u'transliteration', u'type', u'Hrkt')
+            readingNodeAlt = c1wa(node, u'transliteration', u'type', u'Hira')
             if readingNode:
                 self.reading = qnodetext(readingNode)
             elif readingNodeAlt:
                 self.reading = qnodetext(readingNodeAlt)
             else:
-                readingNode = qwa(node, u'transliteration', u'type', u'Latn')
+                readingNode = c1wa(node, u'transliteration', u'type', u'Latn')
                 if readingNode:
                     self.reading = qnodetext(readingNode)
         meaningNode = qwa(node, u'response', u'type', u'meaning')
@@ -223,8 +230,7 @@ class SmartFMSentence(SmartFMItem):
         self.core_words = list()
     
     def linkToVocab(self, vocab):
-        newMeaning = vocab.expression + u" -- " + vocab.meaning
-        self.secondary_meanings.append(newMeaning)
+        self.secondary_meanings.append(vocab)
         self.core_words.append(vocab.expression)
     
     def loadFromDOM(self, node, translationLanguage):
@@ -447,15 +453,16 @@ class SmartFMAPI(object):
             includeSentences = False
             if itemtype == "sentence":
                 includeSentences = True
-            self._logMsg("%s(%s)" % (type, iknowId))
+            self._logMsg("%s(%s)" % (itemtype, iknowId))
             url = SmartFMAPI.SmartFM_API_URL + "/%ss/%s.xml" % (itemtype, iknowId)
             results = self._allPagesUntilEmpty(url, moreThanOnePage=False, gettingType="sentence", includeSentences=includeSentences, translationLanguage=lang)
             if len(results.items.values()) > 0:
                 return results.items.values()[0]
             else:
-                raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm sentence %s" % iknowId
+                raise SmartFMNoListDataFound, "No data could be retrieved for smart.fm item/sentence %s" % iknowId
         except:
             raise SmartFMDownloadError(traceback.format_exc())
+            
     
     def listItems(self, listId, includeVocab, includeSentences):
         smartfmlist = self.list(listId)
@@ -506,13 +513,14 @@ class SmartFMAPI(object):
         allResults = self._allPagesUntilEmpty(itemsUrlBase, baseParams=itemsBaseParams, includeSentences=True, translationLanguage=smartfmlist.translation_language, gettingType="items/vocab and sentences")
         
         #NOTE: DEPRECATED: as of mid June 2009, seems that smart.fm has fixed their list/items API. If the include_sentences param is passed as true, only sentences in the list itself is returned. skipping the below step seems to save a massive amount of time
-        #sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        #sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
+        #NOTE: UNdeprecated: smart.fm reverted to previous behavior and now includes sentences not in the list, so we have to filter them out
+        sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
+        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
         #pretime = time.time()
-        #for key in allResults.items.keys():
-        #    if allResults.items[key].type == "sentence":
-        #        if key not in sentenceResults.items:
-        #            del allResults.items[key]
+        for key in allResults.items.keys():
+            if allResults.items[key].type == "sentence":
+                if key not in sentenceResults.items:
+                    del allResults.items[key]
         #posttime = time.time()
         #self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
         return allResults
