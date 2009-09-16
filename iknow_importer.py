@@ -3,6 +3,7 @@ from PyQt4.QtGui import QAction, QMessageBox, QDesktopServices
 from PyQt4 import QtCore, QtGui
 from ankiqt import mw
 from ankiqt.ui.utils import getOnlyText
+from anki.utils import canonifyTags
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
 import os, re, time, urllib, traceback
@@ -113,8 +114,8 @@ class IknowImportDialog(QtGui.QDialog):
         self.importSettings = importSettings
         self.setObjectName("Smart.fm Import")
         self.setWindowTitle("Smart.fm Import")
-        self.setMinimumSize(450, 450)
-        self.resize(450, 480)
+        self.setMinimumSize(450, 600)
+        self.resize(450, 600)
     
         self.mainLayout = QtGui.QVBoxLayout(self)
         self.mainLayout.setSpacing(6)
@@ -148,14 +149,6 @@ class IknowImportDialog(QtGui.QDialog):
         self.rbtn_typesToImportAll.setChecked(self.importSettings.importVocab and  self.importSettings.importSentences)
         self.settingsLayout.addWidget(self.rbtn_group_typesToImport)
         
-        self.labelAmount = QtGui.QLabel("Maximum number of items to import (leave blank to download all items):")
-        self.labelAmount.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
-        self.labelAmount.setWordWrap(True)
-        self.settingsLayout.addWidget(self.labelAmount)
-        self.txt_amountToImport = QtGui.QLineEdit(self)
-        self.txt_amountToImport.setMaxLength(5)
-        self.settingsLayout.addWidget(self.txt_amountToImport)
-        
         self.check_AudioDownload = QtGui.QCheckBox("Download audio clips if available", self)
         self.check_AudioDownload.setChecked(self.importSettings.downloadAudio)
         self.settingsLayout.addWidget(self.check_AudioDownload)
@@ -178,6 +171,32 @@ class IknowImportDialog(QtGui.QDialog):
         self.check_reverseStudyDirection.setChecked(False)
         self.check_reverseStudyDirection.setToolTip("Makes a 'Japanese speaker learning English' list and turns it into a 'English speaker learning Japanese' list.")
         self.settingsLayout.addWidget(self.check_reverseStudyDirection)
+        
+        self.labelAmount = QtGui.QLabel("Maximum number of items to import (leave blank to download all items):")
+        self.labelAmount.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
+        self.labelAmount.setWordWrap(True)
+        self.settingsLayout.addWidget(self.labelAmount)
+        self.txt_amountToImport = QtGui.QLineEdit(self)
+        self.txt_amountToImport.setMaxLength(5)
+        self.settingsLayout.addWidget(self.txt_amountToImport)
+        
+        self.labelTags = QtGui.QLabel("Tags: ")
+        self.labelTags.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
+        self.labelTags.setWordWrap(True)
+        self.settingsLayout.addWidget(self.labelTags)
+        self.txt_tagsOnImport = QtGui.QLineEdit(self)
+        self.txt_tagsOnImport.setMaxLength(50)
+        if self.importSettings.tagsOnImport:
+            self.txt_tagsOnImport.setText(self.importSettings.tagsOnImport)
+        self.settingsLayout.addWidget(self.txt_tagsOnImport)
+        
+        self.labelReschedule = QtGui.QLabel("Schedule First Reviews for after # to # Days (please use the format #-# eg '7-14')")
+        self.labelReschedule.setAlignment( QtCore.Qt.AlignLeading | QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.labelReschedule.setWordWrap(True)
+        self.settingsLayout.addWidget(self.labelReschedule)
+        self.txt_rescheduleAmount = QtGui.QLineEdit(self)
+        self.txt_rescheduleAmount.setMaxLength(50)
+        self.settingsLayout.addWidget(self.txt_rescheduleAmount)
         
         self.settingsLayout.addItem(QtGui.QSpacerItem(5, 30, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding))
         
@@ -239,6 +258,31 @@ class IknowImportDialog(QtGui.QDialog):
                 errors.append("Maximum items to import must be all numeric, and greater than or equal to 0.")
         else:
             self.importSettings.maxItems = 0
+        
+        tagsOnImport = self.txt_tagsOnImport.text()
+        if tagsOnImport:
+            tagsOnImport = unicode(tagsOnImport).strip()
+            if len(tagsOnImport) > 0:
+                self.importSettings.tagsOnImport = tagsOnImport
+            else:
+                self.importSettings.tagsOnImport = None
+        else:
+            self.importSettings.tagsOnImport = None
+        
+        rescheduleText = self.txt_rescheduleAmount.text()
+        if rescheduleText:
+            rescheduleText = unicode(rescheduleText).strip()
+            minMax = re.match("^(\d+)\s*-\s*(\d+)$", rescheduleText)
+            if minMax:
+                rescheduleMin = minMax.group(1)
+                rescheduleMax = minMax.group(2)
+                if rescheduleMin < rescheduleMax:
+                    self.importSettings.rescheduleMin = rescheduleMin
+                    self.importSettings.rescheduleMax = rescheduleMax
+                else:
+                    errors.append("The reschedule amount minimum days is greater or equal to the reschdule amount maximum days")
+            else:
+                errors.append("Please follow the format '#-#' for the reschedule amount eg '3-4'")
         self.importSettings.downloadAudio = self.check_AudioDownload.isChecked()
         self.importSettings.includeItemMeaning = self.check_includeItemMeaning.isChecked()
         self.importSettings.boldBilingualKeywords = self.check_boldKeywordBilingual.isChecked()
@@ -278,6 +322,9 @@ class SmartFMImportSettings:
         self.boldBilingualKeywords = False
         self.boldMonolingualKeywords = True
         self.reverseStudyDirection = False
+        self.tagsOnImport = None
+        self.rescheduleMin = None
+        self.rescheduleMax = None
         self.loadFromConfig()
     
     def loadFromConfig(self):
@@ -306,6 +353,8 @@ class SmartFMImportSettings:
                 self.boldBilingualKeywords = True
             elif mw.config["iknow.boldBilingualKeywords"] == "False":
                 self.boldBilingualKeywords = False
+        if "iknow.tagsOnImport" in mw.config:
+            self.tagsOnImport = unicode(mw.config["iknow.tagsOnImport"])
     
     def saveToConfig(self):
         if self.importVocab:
@@ -328,6 +377,10 @@ class SmartFMImportSettings:
             mw.config["iknow.boldBilingualKeywords"] = "True"
         else:
             mw.config["iknow.boldBilingualKeywords"] = "False"
+        if self.tagsOnImport:
+            mw.config["iknow.tagsOnImport"] = self.tagsOnImport
+        else:
+            del mw.config["iknow.tagsOnImport"]
 
 
 class SmartFMModelManager:
@@ -540,6 +593,8 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
         model = sentenceModel
     
     fact = mw.deck.newFact(model)
+    if importSettings.tagsOnImport and len(importSettings.tagsOnImport.strip()) > 0:
+        fact.tags = canonifyTags(importSettings.tagsOnImport)
     fact['iKnowID'] = item.uniqIdStr()
     fact['Expression'] = item.expression
     fact['Meaning'] = item.meaning
@@ -584,7 +639,10 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
         fact['Audio'] = u"[sound:%s]" % item.audio_uri
     else:
         fact['Audio'] = u""
-    mw.deck.addFact(fact)
+    newfact = mw.deck.addFact(fact)
+    cardIds = [card.id for card in newfact.cards]
+    if importSettings.rescheduleMin and importSettings.rescheduleMax:
+        mw.deck.rescheduleCards(cardIds, float(importSettings.rescheduleMin), float(importSettings.rescheduleMax))
     mw.deck.save()
     return True
 
