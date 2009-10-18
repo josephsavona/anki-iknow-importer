@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import traceback
 foundJapaneseSupportPlugin = False
 mecabInstance = None
 try:
@@ -34,15 +35,16 @@ if not foundJapaneseSupportPlugin:
         """given the original text, use JA support mecab plugin to find the reading. if the mecab reading matches the original reading, return the mecab formatted version (ie with kanjitext[kanareading] form). if the mecab reading does not match the original reading, return None."""
         return (originalReading, "original")
 else:
-    def getAdjustedReadingOfText(originalText, originalReading):
+    def getAdjustedReadingOfText(originalText, originalReading, logMsg):
         """given the original text, use JA support mecab plugin to find the reading. if the mecab reading matches the original reading, return the mecab formatted version (ie with kanjitext[kanareading] form). if the mecab reading does not match the original reading, return None."""
         try:
             mecabReading = mecabInstance.reading(originalText)
             if len(originalReading) == 0:
-                return (mecabReading, "differentreading")
+                return (mecabReading, "no-original-using-mecab")
             elif kanaOnly(originalReading) != kanaOnly(mecabReading):
-                return (None, "differentreading")
+                return (mecabReading, "original-notequal-mecab")
             else:
-                return (mecabReading, "mecab")
+                return (mecabReading, "mecab-ok")
         except:
-            return (originalReading, "original")
+            logMsg(traceback.format_exc().encode('utf-8'))
+            return (originalReading, "mecab-error-using-original")

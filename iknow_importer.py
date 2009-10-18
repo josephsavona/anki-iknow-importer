@@ -6,7 +6,7 @@ from ankiqt.ui.utils import getOnlyText
 from anki.utils import canonifyTags
 from anki.models import Model, FieldModel, CardModel
 from anki.facts import Field
-import os, re, time, urllib, traceback
+import os, re, time, urllib, traceback, os.path
 from smartfm.iknow import *
 from smartfm.ja_reading import getAdjustedReadingOfText
 
@@ -274,15 +274,15 @@ class IknowImportDialog(QtGui.QDialog):
             rescheduleText = unicode(rescheduleText).strip()
             minMax = re.match("^(\d+)\s*-\s*(\d+)$", rescheduleText)
             if minMax:
-                rescheduleMin = minMax.group(1)
-                rescheduleMax = minMax.group(2)
+                rescheduleMin = float(minMax.group(1))
+                rescheduleMax = float(minMax.group(2))
                 if rescheduleMin < rescheduleMax:
                     self.importSettings.rescheduleMin = rescheduleMin
                     self.importSettings.rescheduleMax = rescheduleMax
                 else:
                     errors.append("The reschedule amount minimum days is greater or equal to the reschdule amount maximum days")
             else:
-                errors.append("Please follow the format '#-#' for the reschedule amount eg '3-4'")
+                errors.append("Please follow the format '#-#' (min days - max days) for the reschedule amount eg '3-4'")
         self.importSettings.downloadAudio = self.check_AudioDownload.isChecked()
         self.importSettings.includeItemMeaning = self.check_includeItemMeaning.isChecked()
         self.importSettings.boldBilingualKeywords = self.check_boldKeywordBilingual.isChecked()
@@ -379,7 +379,7 @@ class SmartFMImportSettings:
             mw.config["iknow.boldBilingualKeywords"] = "False"
         if self.tagsOnImport:
             mw.config["iknow.tagsOnImport"] = self.tagsOnImport
-        else:
+        elif "iknow.tagsOnImport" in mw.config:
             del mw.config["iknow.tagsOnImport"]
 
 
@@ -487,7 +487,7 @@ class ProgressTracker:
             
     def logMsg(self, msg):
         if self.logFile:
-            self.logFile.write(str(msg))
+            self.logFile.write(str(msg) + "\n")
             self.logFile.flush()
             
     def downloadCallback(self, url, pageNumber, itemCount, itemType):
@@ -525,7 +525,7 @@ def formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSetting
         item.language = iknowList.translation_language
     return True
 
-def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem):
+def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem, progress):
     if importSettings.reverseStudyDirection:
         if not formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSettings):
             return False
@@ -535,8 +535,9 @@ def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem):
         
     try:
         if item.language.lower() == "ja":
-            (adjustedReading, readingSource) = getAdjustedReadingOfText(item.expression, item.reading)
-            if readingSource == "differentreading":
+            (adjustedReading, readingSource) = getAdjustedReadingOfText(item.expression, item.reading, progress.logMsg)
+            progress.logMsg("getAdjustedReading('%s'): %s" % (item.expression.encode('utf-8'), readingSource.encode('utf-8')))
+            if readingSource != "mecab-ok":
                 if len(item.reading) > 0:
                     item.reading += u"<br />"
                 item.reading += adjustedReading + u" -- !EditReading!"
@@ -573,7 +574,7 @@ def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem):
     return True
 
 
-def importIknowItem(item, sentenceModel, vocabModel, importSettings):
+def importIknowItem(item, sentenceModel, vocabModel, importSettings, progress):
     idQuery = mw.deck.s.query(Field).filter_by(value=item.uniqIdStr())
     field = idQuery.first()
     if field:
@@ -622,17 +623,23 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
             tries += 1
             try:
                 (filePath, headers) = urllib.urlretrieve(item.audio_uri)
-                gotAudioForItem = True
-            except:
-                pass
+                if os.path.exists(filePath) and os.path.getsize(filePath) > 0:
+                    gotAudioForItem = True
+                elif not os.path.exists(filePath):
+                    progress.logMsg("WARN INFO: downloading URL %s with urlretrieve but the returned path %s does not exist." % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8')))
+                else:
+                    progress.logMsg("WARN INFO: downloading URL %s with urlretrieve but the returned path %s has no data." % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8')))
+            except IOError:
+                progress.logMsg("ERROR INFO: downloading URL %s but got IOError: %s" % (item.audio_uri.encode('utf-8'), traceback.format_exc().encode('utf-8')))
         if not gotAudioForItem:
             raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item.audio_uri
         
         # now try to add the media file to the deck
         try:
             path = mw.deck.addMedia(filePath)
+            progress.logMsg("Successfully added media from URI %s which was downloaded to %s to the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8')))
         except:
-            raise AddMediaException, ("Failed to add media from URI %s which was downloaded to %s to the media dir at %s" % (item.audio_uri, filePath, mw.deck.mediaDir())) + traceback.format_exc()
+            raise AddMediaException, ("Failed to add media from URI %s \nwhich was downloaded to %s \nto the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8'))) + traceback.format_exc().encode('utf-8')
         
         fact['Audio'] = u"[sound:%s]" % path
     elif item.audio_uri:
@@ -642,16 +649,16 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings):
     newfact = mw.deck.addFact(fact)
     cardIds = [card.id for card in newfact.cards]
     if importSettings.rescheduleMin and importSettings.rescheduleMax:
-        mw.deck.rescheduleCards(cardIds, float(importSettings.rescheduleMin), float(importSettings.rescheduleMax))
+        mw.deck.rescheduleCards(cardIds, importSettings.rescheduleMin, importSettings.rescheduleMax)
     mw.deck.save()
     return True
 
 
 
 def runImport(modelManager, importSettings):
+    progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
     try:
         importSettings.saveToConfig()
-        progress = ProgressTracker(os.path.join(mw.pluginsFolder(), "iknow-smartfm-log.txt"))
         iknow = SmartFMAPI()
         iknowList = iknow.list(importSettings.listId)
         try:
@@ -674,9 +681,9 @@ def runImport(modelManager, importSettings):
                 continue
             if not importSettings.importVocab and item.type == "item":
                 continue
-            if formatIknowItemPreImport(item, iknowList, importSettings, iknowList.isBilingual()):
+            if formatIknowItemPreImport(item, iknowList, importSettings, iknowList.isBilingual(), progress):
                 progress.importCallback(i, item.expression)
-                if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings):
+                if importIknowItem(item, modelManager.sentenceModel, modelManager.vocabModel, importSettings, progress):
                     totalImported += 1
                     totalImportedByType[item.type] = totalImportedByType[item.type] + 1
                 else:
