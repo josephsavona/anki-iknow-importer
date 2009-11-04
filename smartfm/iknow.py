@@ -497,7 +497,7 @@ class SmartFMAPI(object):
     def listSentencesBilingual(self, smartfmlist):
         self._logMsg("listSentences(%s)" % smartfmlist.iknow_id)
         baseUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        results = self._allPagesUntilEmpty(baseUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="sentences")
+        results = self._allPagesUntilEmpty(baseUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=True, includeSentences=True, gettingType="sentences")
         return results.sortItems(False, True)
             
     def listItemsAll(self, smartfmlist):
@@ -515,12 +515,14 @@ class SmartFMAPI(object):
         #NOTE: DEPRECATED: as of mid June 2009, seems that smart.fm has fixed their list/items API. If the include_sentences param is passed as true, only sentences in the list itself is returned. skipping the below step seems to save a massive amount of time
         #NOTE: UNdeprecated: smart.fm reverted to previous behavior and now includes sentences not in the list, so we have to filter them out
         sentUrl = SmartFMAPI.SmartFM_API_URL + "/lists/%s/sentences.xml" % smartfmlist.iknow_id
-        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=False, includeSentences=True, gettingType="list-specific sentences")
+        sentenceResults = self._allPagesUntilEmpty(sentUrl, translationLanguage=smartfmlist.translation_language, moreThanOnePage=True, includeSentences=True, gettingType="list-specific sentences")
         #pretime = time.time()
         for key in allResults.items.keys():
             if allResults.items[key].type == "sentence":
                 if key not in sentenceResults.items:
                     del allResults.items[key]
+                else:
+                    allResults.items[key] = sentenceResults.items[key]
         #posttime = time.time()
         #self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
         return allResults

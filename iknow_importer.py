@@ -126,7 +126,7 @@ class IknowImportDialog(QtGui.QDialog):
         self.settingsLayout = QtGui.QVBoxLayout(self.settingsBox)
         self.mainLayout.addWidget(self.settingsBox)
         
-        self.labelSource = QtGui.QLabel("URL of the smart.fm list you wish to import. Example: http://smart.fm/lists/35430-chinese-media-lesson-1")
+        self.labelSource = QtGui.QLabel("URL of the smart.fm list you wish to import. Example: http://smart.fm/goals/35430-chinese-media-lesson-1")
         self.labelSource.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
         self.labelSource.setWordWrap(True)
         self.settingsLayout.addWidget(self.labelSource)
@@ -241,7 +241,7 @@ class IknowImportDialog(QtGui.QDialog):
         sourceText = self.txt_source.text()
         if sourceText:
             sourceText = unicode(sourceText)
-            listId = re.search("lists/(\d+)", sourceText)
+            listId = re.search("goals/(\d+)", sourceText)
             if listId:
                 self.importSettings.listId = listId.group(1)
             else:
@@ -528,6 +528,7 @@ def formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSetting
 def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem, progress):
     if importSettings.reverseStudyDirection:
         if not formatIknowItemPreImportReverseStudyDirection(item, iknowList, importSettings):
+            progress.logMsg("formatIknowItemPreImport(): item %s could not be imported as a reversed study direction item: %s" % (item.uniqIdStr(), repr(item)))
             return False
             
     if not item.reading or len(item.reading.strip()) == 0:
@@ -614,6 +615,7 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings, progress):
     if importSettings.downloadAudio and item.audio_uri:
         tries = 0
         gotAudioForItem = False
+        gotItemWithNoData = False
         filePath = None
         headers = None
         path = None
@@ -629,17 +631,22 @@ def importIknowItem(item, sentenceModel, vocabModel, importSettings, progress):
                     progress.logMsg("WARN INFO: downloading URL %s with urlretrieve but the returned path %s does not exist." % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8')))
                 else:
                     progress.logMsg("WARN INFO: downloading URL %s with urlretrieve but the returned path %s has no data." % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8')))
+                    gotItemWithNoData = True
             except IOError:
                 progress.logMsg("ERROR INFO: downloading URL %s but got IOError: %s" % (item.audio_uri.encode('utf-8'), traceback.format_exc().encode('utf-8')))
-        if not gotAudioForItem:
+        if not gotAudioForItem and not gotItemWithNoData:
+            #sometimes smart.fm reports that an item has an audio file, gives its URL, and even serves a response from that URL - except the URL has 0 bytes of data. so it downloads as a blank file. in this infrequent case, don't raise an error but just skip the audio.
             raise AudioDownloadError, "Failed to get audio for an item after 3 tries, cancelling import. Error with URI %s" % item.audio_uri
+        if gotItemWithNoData:
+            progress.logMsg("WARN INFO: skipping audio for %s, file had 0 bytes on smart.fm." % item.uniqIdStr())
         
-        # now try to add the media file to the deck
-        try:
-            path = mw.deck.addMedia(filePath)
-            progress.logMsg("Successfully added media from URI %s which was downloaded to %s to the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8')))
-        except:
-            raise AddMediaException, ("Failed to add media from URI %s \nwhich was downloaded to %s \nto the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8'))) + traceback.format_exc().encode('utf-8')
+        if gotAudioForItem:
+            # now try to add the media file to the deck
+            try:
+                path = mw.deck.addMedia(filePath)
+                progress.logMsg("Successfully added media from URI %s which was downloaded to %s to the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8')))
+            except:
+                raise AddMediaException, ("Failed to add media from URI %s \nwhich was downloaded to %s \nto the media dir at %s" % (item.audio_uri.encode('utf-8'), filePath.encode('utf-8'), mw.deck.mediaDir().encode('utf-8'))) + traceback.format_exc().encode('utf-8')
         
         fact['Audio'] = u"[sound:%s]" % path
     elif item.audio_uri:
@@ -673,6 +680,7 @@ def runImport(modelManager, importSettings):
         progress.preImportResetProgress(len(items))
         totalImported = 0
         totalDup = 0
+        totalFormattingErrors = 0
         totalImportedByType = {"item" : 0, "sentence" : 0}
         for i, item in enumerate(items):
             if importSettings.maxItems > 0 and totalImported >= importSettings.maxItems:
@@ -689,11 +697,14 @@ def runImport(modelManager, importSettings):
                 else:
                     totalDup += 1
             else:
-                totalDup += 1
+                totalFormattingErrors += 1
         progress.dialog.cancel()
         progress.close()
         mw.deck.save()
-        QMessageBox.information(mw,"Summary","Import complete. Imported %s items, %s sentences, and skipped %s duplicates." % (totalImportedByType["item"], totalImportedByType["sentence"], totalDup))
+        resultStr = "Import complete. Imported %s items, %s sentences, and skipped %s duplicates." % (totalImportedByType["item"], totalImportedByType["sentence"], totalDup)
+        if totalFormattingErrors > 0:
+            resultStr += " %s items were skipped because there was no translation available on smart.fm." % totalFormattingErrors
+        QMessageBox.information(mw, "Summary", resultStr)
         mw.reset(mw.mainWin)
     except AudioDownloadError:
         progress.logMsg(traceback.format_exc())
