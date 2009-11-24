@@ -538,12 +538,15 @@ def formatIknowItemPreImport(item, iknowList, importSettings, isBilingualItem, p
         if item.language.lower() == "ja":
             (adjustedReading, readingSource) = getAdjustedReadingOfText(item.expression, item.reading, progress.logMsg)
             progress.logMsg("getAdjustedReading('%s'): %s" % (item.expression.encode('utf-8'), readingSource.encode('utf-8')))
-            if readingSource != "mecab-ok":
+            if readingSource == "original-mecab-unavailable":
+                pass #if mecab is unavailable, leave the reading alone
+            elif readingSource == "mecab-ok":
+                item.reading = adjustedReading
+            else:
                 if len(item.reading) > 0:
                     item.reading += u"<br />"
                 item.reading += adjustedReading + u" -- !EditReading!"
-            else:
-                item.reading = adjustedReading
+    
     except:
         pass
     

@@ -33,7 +33,7 @@ def kanaOnly(string):
 if not foundJapaneseSupportPlugin:
     def getAdjustedReadingOfText(originalText, originalReading):
         """given the original text, use JA support mecab plugin to find the reading. if the mecab reading matches the original reading, return the mecab formatted version (ie with kanjitext[kanareading] form). if the mecab reading does not match the original reading, return None."""
-        return (originalReading, "original")
+        return (originalReading, "original-mecab-unavailable")
 else:
     def getAdjustedReadingOfText(originalText, originalReading, logMsg):
         """given the original text, use JA support mecab plugin to find the reading. if the mecab reading matches the original reading, return the mecab formatted version (ie with kanjitext[kanareading] form). if the mecab reading does not match the original reading, return None."""

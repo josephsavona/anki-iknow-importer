@@ -441,6 +441,26 @@ class SmartFMAPI(object):
         except:
             raise SmartFMDownloadError(traceback.format_exc())
     
+    def search(self, query, targetLanguage, includeItems=True, includeSentences=True, translationLanguage=None, requireSound=False, requireImage=False):
+        finalResults = {}
+        if includeItems:
+            itemsURL = SmartFMAPI.SmartFM_API_URL + "/items/matching/%s.xml" % query
+            params = {"language" : targetLanguage, "require_sound" : requireSound, "require_image" : requireImage}
+            if translationLanguage:
+                params["translation_language"] = translationLanguage
+            itemResults = self._allPagesUntilEmpty(itemsURL, moreThanOnePage=True, gettingType="items", includeSentences=False, baseParams=params)
+            finalResults['items'] = itemResults
+        if includeSentences:
+            sentencesURL = SmartFMAPI.SmartFM_API_URL + "/sentences/matching/%s.xml" % query
+            params = {"language" : targetLanguage, "require_image" : requireImage, "require_sound" : requireSound}
+            if translationLanguage:
+                params["translation_language"] = translationLanguage
+                params["require_translation"] = "true"
+            sentenceResults = self._allPagesUntilEmpty(sentencesURL, moreThanOnePage=True, gettingType="sentences", includeSentences=True, baseParams=params)
+            finalResults['sentences'] = sentenceResults
+        return finalResults
+        
+    
     def sentence(self, iknowId, lang=u"en"):
         return self.genericItem("sentence", iknowId, lang)
     
@@ -522,7 +542,11 @@ class SmartFMAPI(object):
                 if key not in sentenceResults.items:
                     del allResults.items[key]
                 else:
+                    #sentences only list will not be associated with any vocabulary, so ensure that any linked vocab is preserved
+                    # this swap to use the sentences from the sentence only list instead of the sentences from the items&sentences list is due to a bug on smart.fm's part with incomplete data on the sentences in the items&sentences api calls
+                    sentenceResults.items[key].secondary_meanings = allResults.items[key].secondary_meanings
                     allResults.items[key] = sentenceResults.items[key]
+                    
         #posttime = time.time()
         #self._logMsg("timing: listItemsGeneric: remove sentences: %s" % (posttime - pretime))
         return allResults
